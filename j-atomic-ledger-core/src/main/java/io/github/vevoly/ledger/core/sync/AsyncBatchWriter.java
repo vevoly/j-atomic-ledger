@@ -1,9 +1,11 @@
 package io.github.vevoly.ledger.core.sync;
 
-import io.github.vevoly.ledger.api.StateSyncer;
+import io.github.vevoly.ledger.api.BatchWriter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -12,12 +14,12 @@ import java.util.concurrent.TimeUnit;
  * 通用异步批量写入器
  * 负责削峰填谷，将 Disruptor 处理完的状态异步同步到数据库
  *
- * @param <S> 状态类型
+ * @param <E> 实体类型
  *
  * @author vevoly
  */
 @Slf4j
-public class AsyncBatchWriter<S extends Serializable> extends Thread {
+public class AsyncBatchWriter<E extends Serializable> extends Thread {
 
     /*
       这里为什么使用 BlockingQueue，而不使用 Disruptor？
@@ -34,13 +36,15 @@ public class AsyncBatchWriter<S extends Serializable> extends Thread {
         Disruptor 虽然也支持阻塞策略，但配置起来相对繁琐。
      */
 
-    private final BlockingQueue<S> queue;
+    private final BlockingQueue<E> queue;
 
-    private final StateSyncer<S> syncer;
+    private final BatchWriter<E> syncer;
     private volatile boolean running = false;
+    private final int batchSize;
 
-    public AsyncBatchWriter(int bufferSize, StateSyncer<S> syncer) {
+    public AsyncBatchWriter(int bufferSize, int batchSize, BatchWriter<E> syncer) {
         this.queue = new LinkedBlockingQueue<>(bufferSize);
+        this.batchSize = batchSize;
         this.syncer = syncer;
         this.setName("Ledger-AsyncWriter");
     }
@@ -48,10 +52,10 @@ public class AsyncBatchWriter<S extends Serializable> extends Thread {
     /**
      * 提交任务 (阻塞模式，实现背压)
      */
-    public void submit(S state) {
+    public void submit(E entity) {
         try {
             // 使用 put 而不是 offer，队列满时阻塞生产者(Disruptor)，防止内存溢出
-            queue.put(state);
+            queue.put(entity);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("AsyncBatchWriter submit interrupted", e);
@@ -77,16 +81,24 @@ public class AsyncBatchWriter<S extends Serializable> extends Thread {
 
     @Override
     public void run() {
+        List<E> batchList = new ArrayList<>(batchSize);
         while (running || !queue.isEmpty()) { // 停机时也要处理完剩余数据
             try {
-                // 1. 获取数据
-                S state = queue.poll(1, TimeUnit.SECONDS);
-                if (state == null) {
+                // 1. 尝试获取第一个元素 (带超时),  如果 1秒内没数据，就 continue 检查 running 状态
+                E first = queue.poll(1, TimeUnit.SECONDS);
+                if (first == null) {
                     continue;
                 }
+                batchList.add(first);
 
-                // 2. 调用用户实现的同步逻辑 (无限重试直到成功)
-                doSyncWithRetry(state);
+                // 2. 贪婪获取后续元素, 尝试把队列里剩下的都捞出来，直到填满 batchSize
+                queue.drainTo(batchList, batchSize - 1); // drainTo 是非阻塞的，有多少拿多少
+
+                // 3. 执行批量同步
+                doSyncWithRetry(batchList);
+
+                // 4. 清空列表，准备下一轮
+                batchList.clear();
 
             } catch (InterruptedException e) {
                 // 忽略中断，由 running 标志控制循环结束
@@ -97,14 +109,14 @@ public class AsyncBatchWriter<S extends Serializable> extends Thread {
         log.info("AsyncBatchWriter 已停止，剩余待处理: {}", queue.size());
     }
 
-    private void doSyncWithRetry(S state) {
+    private void doSyncWithRetry(List<E> entities) {
         boolean success = false;
         while (!success) {
             try {
-                syncer.sync(state);
+                syncer.persist(entities);
                 success = true;
             } catch (Exception e) {
-                log.error("状态同步失败，将在 1s 后重试...", e);
+                log.error("批量落库失败，条数: {}, 1秒后重试...", entities.size(), e);
                 // 强制重试机制：数据库挂了也不能丢数据，死等数据库恢复
                 try {
                     Thread.sleep(1000);

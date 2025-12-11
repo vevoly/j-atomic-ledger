@@ -90,7 +90,11 @@ public class SnapshotManager<S extends Serializable> {
         Kryo kryo = new Kryo();
         kryo.setRegistrationRequired(false); // 允许未注册的类
         kryo.setReferences(true); // 允许循环引用
-        // 如果有需要，可以在这里配置更多的 Serializer
+        // 为 Guava BloomFilter 注册 JavaSerializer
+        // 这样 Kryo 就会调用 BloomFilter 自己的 writeObject/readObject，
+        // 而不是去反射它的私有字段（避开 Striped64 访问权限问题）。
+        kryo.register(com.google.common.hash.BloomFilter.class, new com.esotericsoftware.kryo.serializers.JavaSerializer());
+
         return kryo;
     }
 }

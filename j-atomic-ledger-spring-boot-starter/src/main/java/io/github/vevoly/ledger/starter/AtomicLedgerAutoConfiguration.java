@@ -40,19 +40,20 @@ public class AtomicLedgerAutoConfiguration {
      * destroyMethod = "shutdown": Spring 容器销毁时自动优雅停机 (强制快照)
      */
     @Bean(initMethod = "start", destroyMethod = "shutdown")
-    @ConditionalOnBean({BusinessProcessor.class, StateSyncer.class, LedgerBootstrap.class})
+    @ConditionalOnBean({BusinessProcessor.class, BatchWriter.class, LedgerBootstrap.class})
     @ConditionalOnProperty(prefix = "j-atomic-ledger", name = "base-dir")
-    public <S extends Serializable, C extends LedgerCommand> LedgerEngine<S, C> ledgerEngine(
+    public <S extends Serializable, C extends LedgerCommand, E extends Serializable> LedgerEngine<S, C, E> ledgerEngine(
             AtomicLedgerProperties props,
-            BusinessProcessor<S, C> processor,
-            StateSyncer<S> syncer,
+            BusinessProcessor<S, C, E> processor,
+            BatchWriter<E> syncer,
             IdempotencyStrategy idempotencyStrategy,
             LedgerBootstrap<S, C> bootstrap // 注入用户配置
     ) {
-        return new LedgerEngine.Builder<S, C>()
+        return new LedgerEngine.Builder<S, C, E>()
                 .baseDir(props.getBaseDir())
                 .name(props.getEngineName())
                 .queueSize(props.getQueueSize())
+                .batchSize(props.getBatchSize())
                 .snapshotInterval(props.getSnapshotInterval())
                 .processor(processor)
                 .syncer(syncer)

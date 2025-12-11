@@ -11,13 +11,14 @@ import java.io.Serializable;
  * @author vevoly
  */
 @FunctionalInterface
-public interface BusinessProcessor<S extends Serializable, C extends Serializable> {
+public interface BusinessProcessor<S extends Serializable, C extends Serializable, E> {
 
     /**
      * 处理业务逻辑 (严禁包含 IO 操作、锁、或 Thread.sleep)
      *
      * @param state   当前内存状态
      * @param command 接收到的命令
+     * @return 需要异步落库的增量实体 (例如 WalletEntity)，如果没有则返回 null
      */
-    void process(S state, C command);
+    E process(S state, C command);
 }

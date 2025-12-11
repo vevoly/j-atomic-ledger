@@ -8,7 +8,7 @@ import com.lmax.disruptor.dsl.ProducerType;
 import io.github.vevoly.ledger.api.BusinessProcessor;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
 import io.github.vevoly.ledger.api.LedgerCommand;
-import io.github.vevoly.ledger.api.StateSyncer;
+import io.github.vevoly.ledger.api.BatchWriter;
 import io.github.vevoly.ledger.core.idempotency.GuavaIdempotencyStrategy;
 import io.github.vevoly.ledger.core.snapshot.SnapshotContainer;
 import io.github.vevoly.ledger.core.snapshot.SnapshotManager;
@@ -30,13 +30,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author vevoly
  */
 @Slf4j
-public class LedgerEngine<S extends Serializable, C extends LedgerCommand> {
+public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E extends Serializable> {
 
     // --- 核心组件 ---
     private final WalManager walManager;
     private final SnapshotManager<S> snapshotManager;
-    private final AsyncBatchWriter<S> asyncWriter;
-    private final BusinessProcessor<S, C> processor;
+    private final AsyncBatchWriter<E> asyncWriter;
+    private final BusinessProcessor<S, C, E> processor;
     private Disruptor<EventWrapper> disruptor;
 
     // --- 运行时状态 ---
@@ -57,7 +57,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand> {
     /**
      * 私有构造函数，使用 Builder 创建
      */
-    private LedgerEngine(Builder<S, C> builder) {
+    private LedgerEngine(Builder<S, C, E> builder) {
         this.engineName = builder.engineName;
         this.processor = builder.processor;
         this.state = builder.initialState;
@@ -77,7 +77,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand> {
                 new GuavaIdempotencyStrategy();
 
         // 4. 初始化异步写入器
-        this.asyncWriter = new AsyncBatchWriter<>(builder.queueSize, builder.syncer);
+        this.asyncWriter = new AsyncBatchWriter<E>(builder.queueSize, builder.batchSize, builder.syncer);
     }
 
     /**
@@ -225,15 +225,15 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand> {
         }
 
         try {
-            // 2. 执行用户定义的业务逻辑 (纯内存操作)
-            processor.process(state, command);
+            // 2. 执行业务，获取增量实体
+            E entity = processor.process(state, command);
             // 3. 记录幂等性
             idempotencyStrategy.add(txId);
             // 4. 触发异步落库 (恢复模式下不需要，因为数据库里应该已经有了，或者依靠最终快照)
             // 注意：如果你希望恢复时也强制刷一遍 DB 以防 DB 数据丢失，可以去掉 !isRecovery
             // 但通常建议恢复模式只恢复内存
-            if (!isRecovery) {
-                asyncWriter.submit(state);
+            if (!isRecovery && entity != null) {
+                asyncWriter.submit(entity);
                 // 优化点：为了极致性能，我们传递引用。
                 // 但因为 Disruptor 是单线程写，AsyncWriter 是单线程读，
                 // 只要 AsyncWriter 在落库时(Serializer/Insert)不修改 State 对象，就是安全的。
@@ -302,28 +302,60 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand> {
         snapshotManager.save(lastWalIndex.get(), state, idempotencyStrategy);
     }
 
-    public static class Builder<S extends Serializable, C extends LedgerCommand> {
+    public static class Builder<S extends Serializable, C extends LedgerCommand, E extends Serializable> {
         private String baseDir = "/tmp/atomic-ledger"; // 默认路径
         private String engineName = "default";
+        private int batchSize = 500;
         private int queueSize = 100000;
         private int snapshotInterval = 50000;
         private S initialState;
-        private BusinessProcessor<S, C> processor;
-        private StateSyncer<S> syncer;
+        private BusinessProcessor<S, C, E> processor;
+        private BatchWriter<E> syncer;
         private IdempotencyStrategy idempotencyStrategy;
         private Class<C> commandClass;
 
-        public Builder<S, C> baseDir(String dir) { this.baseDir = dir; return this; }
-        public Builder<S, C> name(String name) { this.engineName = name; return this; }
-        public Builder<S, C> queueSize(int size) { this.queueSize = size; return this; }
-        public Builder<S, C> snapshotInterval(int interval) { this.snapshotInterval = interval; return this; }
-        public Builder<S, C> initialState(S state) { this.initialState = state; return this; }
-        public Builder<S, C> processor(BusinessProcessor<S, C> p) { this.processor = p; return this; }
-        public Builder<S, C> syncer(StateSyncer<S> s) { this.syncer = s; return this; }
-        public Builder<S, C> idempotency(IdempotencyStrategy s) { this.idempotencyStrategy = s; return this; }
-        public Builder<S, C> commandClass(Class<C> commandClass) { this.commandClass = commandClass; return this; }
+        public Builder<S, C, E> baseDir(String dir) {
+            this.baseDir = dir;
+            return this;
+        }
+        public Builder<S, C, E> name(String name) {
+            this.engineName = name;
+            return this;
+        }
+        public Builder<S, C, E> batchSize(int size) {
+            this.batchSize = size;
+            return this;
+        }
+        public Builder<S, C, E> queueSize(int size) {
+            this.queueSize = size;
+            return this;
+        }
+        public Builder<S, C, E> snapshotInterval(int interval) {
+            this.snapshotInterval = interval;
+            return this;
+        }
+        public Builder<S, C, E> initialState(S state) {
+            this.initialState = state;
+            return this;
+        }
+        public Builder<S, C, E> processor(BusinessProcessor<S, C, E> p) {
+            this.processor = p;
+            return this;
+        }
+        public Builder<S, C, E> syncer(BatchWriter<E> s) {
+            this.syncer = s;
+            return this;
+        }
+        public Builder<S, C, E> idempotency(IdempotencyStrategy s) {
+            this.idempotencyStrategy = s;
+            return this;
+        }
+        public Builder<S, C, E> commandClass(Class<C> commandClass) {
+            this.commandClass = commandClass;
+            return this;
+        }
 
-        public LedgerEngine<S, C> build() {
+        public LedgerEngine<S, C, E> build() {
             if (processor == null || syncer == null || initialState == null) {
                 throw new IllegalArgumentException("Processor, Syncer, and InitialState are required.");
             }

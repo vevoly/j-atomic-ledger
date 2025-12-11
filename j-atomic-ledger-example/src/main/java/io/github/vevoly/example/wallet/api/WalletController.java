@@ -2,12 +2,14 @@ package io.github.vevoly.example.wallet.api;
 
 import io.github.vevoly.example.wallet.domain.TradeCommand;
 import io.github.vevoly.example.wallet.domain.WalletState;
+import io.github.vevoly.example.wallet.entity.UserWalletEntity;
 import io.github.vevoly.ledger.core.LedgerEngine;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -17,10 +19,10 @@ public class WalletController {
 
     // 直接注入引擎！
     @Autowired
-    private LedgerEngine<WalletState, TradeCommand> ledgerEngine;
+    private LedgerEngine<WalletState, TradeCommand, UserWalletEntity> ledgerEngine;
 
     @GetMapping("/trade")
-    public String trade(@RequestParam("uid") Long uid, @RequestParam("amount") long amount) {
+    public String trade(@RequestParam("uid") Long uid, @RequestParam("amount") BigDecimal amount) {
         // 1. 构造命令
         TradeCommand cmd = new TradeCommand();
         cmd.setTxId(UUID.randomUUID().toString());

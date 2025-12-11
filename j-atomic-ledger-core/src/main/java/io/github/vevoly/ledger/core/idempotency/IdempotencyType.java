@@ -6,6 +6,6 @@ package io.github.vevoly.ledger.core.idempotency;
  * @author vevoly
  */
 public enum IdempotencyType {
-    GUAVA, // 布隆过滤器
+    BLOOM, // 布隆过滤器
     LRU    // LRU Cache
 }

@@ -26,6 +26,12 @@ public class AtomicLedgerProperties {
     private String engineName = "default";
 
     /**
+     * 数据库批量写入大小
+     * 默认 500
+     */
+    private int batchSize = 500;
+
+    /**
      * 异步落库队列大小
      * 默认为 10万
      */
@@ -40,6 +46,6 @@ public class AtomicLedgerProperties {
     /**
      * 幂等去重策略类型
      */
-    private IdempotencyType idempotency = IdempotencyType.GUAVA;
+    private IdempotencyType idempotency = IdempotencyType.BLOOM;
 
 }
