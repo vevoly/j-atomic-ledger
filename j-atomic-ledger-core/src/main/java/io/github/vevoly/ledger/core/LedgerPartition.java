@@ -5,10 +5,11 @@ import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import io.github.vevoly.ledger.api.BusinessProcessor;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
 import io.github.vevoly.ledger.api.LedgerCommand;
-import io.github.vevoly.ledger.api.BatchWriter;
 import io.github.vevoly.ledger.core.idempotency.GuavaIdempotencyStrategy;
 import io.github.vevoly.ledger.core.snapshot.SnapshotContainer;
 import io.github.vevoly.ledger.core.snapshot.SnapshotManager;
@@ -16,6 +17,7 @@ import io.github.vevoly.ledger.core.sync.AsyncWriter;
 import io.github.vevoly.ledger.core.wal.WalManager;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import metrics.LedgerMetricConstants;
 import net.openhft.chronicle.queue.ExcerptTailer;
 
 import java.io.File;
@@ -53,16 +55,14 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
 
     // --- 配置 ---
     private final int partitionIndex; // 分片编号
-    /**
-     * -- GETTER --
-     *  获取分片名称
-     *
-     * @return
-     */
     @Getter
     private final String partitionName; // 分片名
     private final String engineName; // 引擎名
     private final int snapshotInterval; // 快照间隔 (多少条 Log 做一次快照)
+
+    // --- Metrics ---
+    private final MeterRegistry registry;
+    private final Tags tags;
 
     // 内部事件包装器 (避免让 Disruptor 直接处理泛型)
     private static class EventWrapper {
@@ -93,8 +93,15 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
                 builder.getIdempotencyStrategy() :
                 new GuavaIdempotencyStrategy();
 
-        // 4. 初始化异步写入器
-        this.asyncWriter = new AsyncWriter<E>(builder.getQueueSize(), builder.getBatchSize(), builder.getSyncer());
+        // 4. 初始化 Metrics
+        this.registry = builder.getRegistry();
+        this.tags = Tags.of(
+                LedgerMetricConstants.TAG_ENGINE, builder.getEngineName(),
+                LedgerMetricConstants.TAG_PARTITION, partitionName
+        );
+
+        // 5. 初始化异步写入器
+        this.asyncWriter = new AsyncWriter<>(builder.getQueueSize(), builder.getBatchSize(), builder.getSyncer(), registry, tags);
     }
 
     /**
@@ -121,6 +128,10 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
                 ProducerType.MULTI,
                 new BlockingWaitStrategy()
         );
+
+        // 注册 RingBuffer 监控，监控剩余容量，越小越危险
+        registry.gauge(LedgerMetricConstants.METRIC_RING_REMAINING, tags,
+                disruptor, d -> d.getRingBuffer().remainingCapacity());
 
         // 绑定内部处理器
         this.disruptor.handleEventsWith(new CoreEventHandler());
@@ -190,7 +201,6 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
         @Override
         public void onEvent(EventWrapper event, long sequence, boolean endOfBatch) {
             C command = (C) event.command;
-
             try {
                 // 1. 写 WAL (这是唯一会产生 IO 的地方，但因为是顺序写，极快)
                 long index = walManager.write(command);
@@ -214,7 +224,6 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      */
     private void processCommand(C command, boolean isRecovery) {
         // 这是一个防御性检查，防止路由层把 User-2 的请求发到了 Partition-1
-        // 注意：这需要 command 能提供 int hash()
         // if (!isRecovery && (command.getRoutingKey().hashCode() % totalPartitions != partitionIndex)) {
         //     log.error("路由错误！我是分片 {}, 但收到了 key={} 的请求", partitionIndex, command.getRoutingKey());
         //     return;
@@ -226,8 +235,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
         // 1. 幂等去重检查
         if (idempotencyStrategy.contains(txId)) {
             // 如果已处理，直接跳过
-            // 生产环境可以考虑打印 debug 日志
-            log.warn("Command already processed: {}", txId);
+            log.debug("Command already processed: {}", txId);
             if (future != null) {
                 future.completeExceptionally(new RuntimeException("Duplicate request: " + txId));
             }
@@ -240,15 +248,9 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
             // 3. 记录幂等性
             idempotencyStrategy.add(txId);
             // 4. 触发异步落库 (恢复模式下不需要，因为数据库里应该已经有了，或者依靠最终快照)
-            // 注意：如果你希望恢复时也强制刷一遍 DB 以防 DB 数据丢失，可以去掉 !isRecovery
-            // 但通常建议恢复模式只恢复内存
+            // 恢复模式只恢复内存
             if (!isRecovery && entity != null) {
                 asyncWriter.submit(entity);
-                // 优化点：为了极致性能，我们传递引用。
-                // 但因为 Disruptor 是单线程写，AsyncWriter 是单线程读，
-                // 只要 AsyncWriter 在落库时(Serializer/Insert)不修改 State 对象，就是安全的。
-                // 如果 State 是可变的，最安全的做法是这里 clone 一份，但这会影响性能。
-                // 既然是高性能中间件，我们约定：StateSyncer 里读取 State 时，State 此时是"快照"语义。
             }
             if (future != null) {
                 future.complete("SUCCESS");
@@ -267,11 +269,15 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      */
     public void submit(C command) {
         RingBuffer<EventWrapper> ringBuffer = disruptor.getRingBuffer();
+        // 1. 领号：拿到第 N 个槽位的序号
         long sequence = ringBuffer.next();
         try {
+            // 2. 取货：拿出第 N 个槽位里的那个对象（这是复用的旧对象）
             EventWrapper event = ringBuffer.get(sequence);
+            // 3. 装货：把业务数据填进去
             event.command = command;
         } finally {
+            // 4. 发货：告诉 Disruptor "第 N 个位置的数据准备好了"
             ringBuffer.publish(sequence);
         }
     }

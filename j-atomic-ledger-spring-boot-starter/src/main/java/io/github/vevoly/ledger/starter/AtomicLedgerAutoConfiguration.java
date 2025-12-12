@@ -5,6 +5,7 @@ import io.github.vevoly.ledger.core.LedgerEngine;
 import io.github.vevoly.ledger.core.idempotency.GuavaIdempotencyStrategy;
 import io.github.vevoly.ledger.core.idempotency.IdempotencyType;
 import io.github.vevoly.ledger.core.idempotency.LruIdempotencyStrategy;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -47,7 +48,8 @@ public class AtomicLedgerAutoConfiguration {
             BusinessProcessor<S, C, E> processor,
             BatchWriter<E> syncer,
             IdempotencyStrategy idempotencyStrategy,
-            LedgerBootstrap<S, C> bootstrap // 注入用户配置
+            LedgerBootstrap<S, C> bootstrap,
+            MeterRegistry meterRegistry // 自动注入 Spring Boot 的 MeterRegistry
     ) {
         return new LedgerEngine.Builder<S, C, E>()
                 .baseDir(props.getBaseDir())
@@ -61,6 +63,7 @@ public class AtomicLedgerAutoConfiguration {
                 .idempotency(idempotencyStrategy)
                 .initialState(bootstrap.getInitialState())
                 .commandClass((bootstrap.getCommandClass()))
+                .meterRegistry(meterRegistry)
                 .build();
     }
 }

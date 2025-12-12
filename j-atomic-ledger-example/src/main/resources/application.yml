@@ -1,6 +1,15 @@
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*" # 暴露所有端点，包括 metrics
+  metrics:
+    tags:
+      application: wallet-demo # 全局 Tag
+
 j-atomic-ledger:
   base-dir: ./data/ledger-demo # 数据存储路径
   engine-name: wallet-core     # 引擎名称

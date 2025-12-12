@@ -4,6 +4,7 @@ import io.github.vevoly.ledger.api.BatchWriter;
 import io.github.vevoly.ledger.api.BusinessProcessor;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
 import io.github.vevoly.ledger.api.LedgerCommand;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
@@ -135,6 +136,8 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         private int snapshotInterval = 50000;
         // 分片数量配置，默认为 1
         int partitionCount = 1;
+        // Metrics
+        private MeterRegistry meterRegistry;
         // 用户扩展点
         private S initialState;
         private BusinessProcessor<S, C, E> processor;
@@ -166,6 +169,10 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
             this.partitionCount = count;
             return this;
         }
+        public Builder<S, C, E> meterRegistry(MeterRegistry registry) {
+            this.meterRegistry = registry;
+            return this;
+        }
         public Builder<S, C, E> initialState(S state) {
             this.initialState = state;
             return this;
@@ -187,6 +194,14 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
             return this;
         }
 
+        // Getter (给 Partition 用)
+        public MeterRegistry getRegistry() {
+            if (this.meterRegistry == null) {
+                // 兜底，防止用户没传报错
+                this.meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+            }
+            return this.meterRegistry;
+        }
         public LedgerEngine<S, C, E> build() {
             if (processor == null || syncer == null || initialState == null) {
                 throw new IllegalArgumentException("Processor, Syncer, and InitialState are required.");

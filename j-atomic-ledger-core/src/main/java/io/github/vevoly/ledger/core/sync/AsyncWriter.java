@@ -1,7 +1,11 @@
 package io.github.vevoly.ledger.core.sync;
 
 import io.github.vevoly.ledger.api.BatchWriter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
+import metrics.LedgerMetricConstants;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -28,7 +32,7 @@ public class AsyncWriter<E extends Serializable> extends Thread {
         落库链路：写数据库。瓶颈在 IO (网络/磁盘)。 数据库写一次最快也要 1ms - 5ms。哪怕 LinkedBlockingQueue 有锁竞争，消耗了 0.01ms，相比于数据库的 5ms，根本微不足道。
         在这里用 Disruptor，就像是开着法拉利去送外卖，速度的瓶颈在于等红绿灯（数据库），而不是车速（队列性能）。
       2. API 的便利性 (drainTo)
-        AsyncBatchWriter 的核心逻辑是 “批量聚合”。BlockingQueue 提供了一个神器方法：drainTo(Collection c, int maxElements)。
+        AsyncWriter 的核心逻辑是 “批量聚合”。BlockingQueue 提供了一个神器方法：drainTo(Collection c, int maxElements)。
         它可以一次性、原子地把队列里现有的所有元素都捞出来放到 List 里。这对于实现 batchInsert 极其方便。
         Disruptor 要实现类似的功能（BatchEventProcessor），代码复杂度会高很多，而且很难像 drainTo 那样灵活控制“有多少拿多少，最多拿N个”。
       3. 背压实现的简单性 (Backpressure)
@@ -42,11 +46,17 @@ public class AsyncWriter<E extends Serializable> extends Thread {
     private volatile boolean running = false;
     private final int batchSize;
 
-    public AsyncWriter(int bufferSize, int batchSize, BatchWriter<E> syncer) {
+    private final MeterRegistry registry;
+    private final Tags tags;
+    private Timer dbBatchTimer;
+
+    public AsyncWriter(int bufferSize, int batchSize, BatchWriter<E> syncer, MeterRegistry registry, Tags tags) {
         this.queue = new LinkedBlockingQueue<>(bufferSize);
         this.batchSize = batchSize;
         this.syncer = syncer;
-        this.setName("Ledger-AsyncWriter");
+        this.registry = registry;
+        this.tags = tags;
+        this.setName("J-Atomic-Ledger-AsyncWriter");
     }
 
     /**
@@ -58,16 +68,21 @@ public class AsyncWriter<E extends Serializable> extends Thread {
             queue.put(entity);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("AsyncBatchWriter submit interrupted", e);
+            log.warn("AsyncWriter submit interrupted", e);
         }
     }
 
     @Override
     public synchronized void start() {
         if (running) return;
+        // 1. 注册队列积压监控 (Gauge)
+        registry.gauge(LedgerMetricConstants.METRIC_DB_QUEUE_SIZE, tags, queue, BlockingQueue::size); // 这是一个动态指标，Micrometer 会定期调用 queue.size()
+        // 2. 预创建 DB 耗时 Timer
+        this.dbBatchTimer = registry.timer(LedgerMetricConstants.METRIC_DB_BATCH_TIME, tags);
+
         this.running = true;
         super.start();
-        log.info("AsyncBatchWriter 启动成功");
+        log.info("AsyncWriter 启动成功");
     }
 
     public void shutdown() {
@@ -103,17 +118,20 @@ public class AsyncWriter<E extends Serializable> extends Thread {
             } catch (InterruptedException e) {
                 // 忽略中断，由 running 标志控制循环结束
             } catch (Exception e) {
-                log.error("AsyncBatchWriter 发生未知异常", e);
+                log.error("AsyncWriter 发生未知异常", e);
             }
         }
-        log.info("AsyncBatchWriter 已停止，剩余待处理: {}", queue.size());
+        log.info("AsyncWriter 已停止，剩余待处理: {}", queue.size());
     }
 
     private void doSyncWithRetry(List<E> entities) {
         boolean success = false;
         while (!success) {
             try {
-                syncer.persist(entities);
+                // 记录数据库写入耗时
+                dbBatchTimer.record(() -> {
+                    syncer.persist(entities);
+                });
                 success = true;
             } catch (Exception e) {
                 log.error("批量落库失败，条数: {}, 1秒后重试...", entities.size(), e);
