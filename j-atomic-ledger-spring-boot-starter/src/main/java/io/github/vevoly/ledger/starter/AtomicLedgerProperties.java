@@ -26,6 +26,12 @@ public class AtomicLedgerProperties {
     private String engineName = "default";
 
     /**
+     * 分片数量
+     * 默认为 8
+     */
+    private int partitions = 8;
+
+    /**
      * 数据库批量写入大小
      * 默认 500
      */

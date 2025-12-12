@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
  * @author vevoly
  */
 @Slf4j
-public class AsyncBatchWriter<E extends Serializable> extends Thread {
+public class AsyncWriter<E extends Serializable> extends Thread {
 
     /*
       这里为什么使用 BlockingQueue，而不使用 Disruptor？
@@ -42,7 +42,7 @@ public class AsyncBatchWriter<E extends Serializable> extends Thread {
     private volatile boolean running = false;
     private final int batchSize;
 
-    public AsyncBatchWriter(int bufferSize, int batchSize, BatchWriter<E> syncer) {
+    public AsyncWriter(int bufferSize, int batchSize, BatchWriter<E> syncer) {
         this.queue = new LinkedBlockingQueue<>(bufferSize);
         this.batchSize = batchSize;
         this.syncer = syncer;

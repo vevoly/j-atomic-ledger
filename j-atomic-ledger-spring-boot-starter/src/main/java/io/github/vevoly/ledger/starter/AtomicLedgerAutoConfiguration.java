@@ -52,6 +52,7 @@ public class AtomicLedgerAutoConfiguration {
         return new LedgerEngine.Builder<S, C, E>()
                 .baseDir(props.getBaseDir())
                 .name(props.getEngineName())
+                .partitions(props.getPartitions())
                 .queueSize(props.getQueueSize())
                 .batchSize(props.getBatchSize())
                 .snapshotInterval(props.getSnapshotInterval())

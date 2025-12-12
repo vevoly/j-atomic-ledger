@@ -17,6 +17,13 @@ public interface LedgerCommand extends Serializable {
     String getUniqueId();
 
     /**
+     * 路由键 (用于分片路由)
+     * 必须保证同一个业务实体的请求返回相同的 Key。
+     * 例如: userId, accountId。千万不要用随机生成的 ID (如 txId)，否则同一个用户的余额会被分散到不同线程，导致并发扣款事故。
+     */
+    String getRoutingKey();
+
+    /**
      * 获取用于通知结果的 Future
      * @return
      */

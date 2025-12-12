@@ -49,6 +49,6 @@ public class WalletController {
     // 查询当前内存状态 (仅用于调试)
     @GetMapping("/balance")
     public Long balance(@RequestParam("uid") Long uid) {
-        return ledgerEngine.getState().getBalances().getOrDefault(uid, 0L);
+        return ledgerEngine.getStateBy(String.valueOf(uid)).getBalances().getOrDefault(uid, 0L);
     }
 }

@@ -26,10 +26,11 @@ public class BenchController {
     private LedgerEngine<WalletState, TradeCommand, UserWalletEntity> engine;
 
     // 压测接口：模拟并发请求
-    // URL: http://localhost:8080/bench?count=10000&threads=10
+    // URL: RL: http://localhost:8080/bench?count=100000&threads=50&users=4
     @GetMapping("/bench")
     public String benchmark(@RequestParam(value = "count", defaultValue = "10000") int count,
-                            @RequestParam(value = "threads", defaultValue = "10") int threads) {
+                            @RequestParam(value = "threads", defaultValue = "10") int threads,
+                            @RequestParam(value = "users", defaultValue = "4") int userCount) {
 
         // 1. 定义计数器和开始时间
         AtomicInteger completedCount = new AtomicInteger(0);
@@ -37,16 +38,19 @@ public class BenchController {
 
         // 2. 创建发送线程池
         ExecutorService executor = Executors.newFixedThreadPool(threads);
-
-        System.out.println(">>> 压测开始，计划发送 " + count + " 条请求...");
+        System.out.println(String.format(">>> 压测开始，总请求: %d, 并发线程: %d, 模拟用户数: %d ...", count, threads, userCount));
 
         for (int i = 0; i < count; i++) {
+            // 通过取模，让请求均匀分布在 0, 1, 2, 3 ... userCount-1 这些用户上
+            // 这样不同的用户会被路由到不同的 Partition (Disruptor线程)
+            long currentUserId = i % userCount;
+
             executor.submit(() -> {
                 try {
                     TradeCommand cmd = new TradeCommand();
                     cmd.setTxId(UUID.randomUUID().toString());
-                    cmd.setUserId(1L); // 依然只压测同一个用户，测试热点性能
-                    cmd.setAmount(BigDecimal.ONE);
+                    cmd.setUserId(currentUserId);
+                    cmd.setAmount(BigDecimal.ONE); // 每次加1元
 
                     // 3. 创建 Future 并设置回调
                     CompletableFuture<Object> future = new CompletableFuture<>();
@@ -65,17 +69,31 @@ public class BenchController {
                             long safeCost = cost == 0 ? 1 : cost;
                             long tps = (long) count * 1000 / safeCost;
 
-                            // 获取内存状态对象
-                            WalletState state = engine.getState();
-                            // 获取用户 1 的余额 (默认为0，防止空指针)
-                            long finalMemBalance = state.getBalances().getOrDefault(1L, 0L);
-
                             log.warn("=========================================");
                             log.warn("🚀 压测完成！(收到所有结果)");
                             log.warn("总耗时: {} ms", cost);
                             log.warn("总请求: {}", count);
+                            log.warn("用户数: {}", userCount);
                             log.warn("真实 TPS: {}", tps);
-                            log.warn("最终余额: " + MoneyUtils.toDb(finalMemBalance));
+
+                            // 5. 验证总金额 (遍历所有测试用户)
+                            long totalMemBalance = 0;
+                            for (long uid = 0; uid < userCount; uid++) {
+                                // 根据路由键找到对应的分片状态
+                                WalletState state = engine.getStateBy(String.valueOf(uid));
+                                // 累加余额
+                                totalMemBalance += state.getBalances().getOrDefault(uid, 0L);
+                            }
+
+                            log.warn("所有用户总余额 (内存值): {}", totalMemBalance);
+                            log.warn("所有用户总余额 (数据库值): {} ", MoneyUtils.toDb(totalMemBalance));
+                            log.warn("预期总余额: {}", (long) count * 10000L); // 请求数 * 单次金额
+
+                            if (totalMemBalance == (long) count * 10000L) {
+                                log.warn("✅ 资金对账成功！");
+                            } else {
+                                log.error("❌ 资金对账失败！差额: {}", totalMemBalance - ((long) count * 10000L));
+                            }
                             log.warn("=========================================");
                         }
                     });

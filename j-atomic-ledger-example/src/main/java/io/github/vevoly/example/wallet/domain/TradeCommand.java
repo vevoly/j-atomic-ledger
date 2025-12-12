@@ -9,4 +9,9 @@ import java.math.BigDecimal;
 public class TradeCommand extends BaseCommand {
     private Long userId;
     private BigDecimal amount;
+
+    @Override
+    public String getRoutingKey() {
+        return String.valueOf(userId);
+    }
 }
