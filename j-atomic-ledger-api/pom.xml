@@ -10,5 +10,17 @@
     </parent>
 
     <artifactId>j-atomic-ledger-api</artifactId>
+    <dependencies>
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>chronicle-bytes</artifactId>
+            <version>2.27ea9</version>
+        </dependency>
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>chronicle-wire</artifactId>
+            <version>2.27ea13</version>
+        </dependency>
+    </dependencies>
 
 </project>

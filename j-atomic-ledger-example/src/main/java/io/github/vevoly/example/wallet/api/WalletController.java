@@ -3,6 +3,7 @@ package io.github.vevoly.example.wallet.api;
 import io.github.vevoly.example.wallet.domain.TradeCommand;
 import io.github.vevoly.example.wallet.domain.WalletState;
 import io.github.vevoly.example.wallet.entity.UserWalletEntity;
+import io.github.vevoly.ledger.api.utils.MoneyUtils;
 import io.github.vevoly.ledger.core.LedgerEngine;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 @RestController
 public class WalletController {
 
-    // 直接注入引擎！
     @Autowired
     private LedgerEngine<WalletState, TradeCommand, UserWalletEntity> ledgerEngine;
 
@@ -27,7 +27,7 @@ public class WalletController {
         TradeCommand cmd = new TradeCommand();
         cmd.setTxId(UUID.randomUUID().toString());
         cmd.setUserId(uid);
-        cmd.setAmount(amount);
+        cmd.setAmount(MoneyUtils.toMem(amount));
 
         // 2. 设置 Future
         CompletableFuture<Object> future = new CompletableFuture<>();

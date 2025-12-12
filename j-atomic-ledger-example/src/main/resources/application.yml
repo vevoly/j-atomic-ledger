@@ -10,11 +10,17 @@ management:
     tags:
       application: wallet-demo # 全局 Tag
 
+logging:
+  level:
+    root: INFO
+    # 屏蔽 Chronicle 的 INFO 级别噪音（比如磁盘检查、映射文件扩容日志）
+    net.openhft: WARN
+
 j-atomic-ledger:
   base-dir: ./data/ledger-demo # 数据存储路径
   engine-name: wallet-core     # 引擎名称
   partitions: 4                # 分片数量
-  queue-size: 1024             # 异步落库队列
-  snapshot-interval: 50000     # 每1万条做一次快照
+  queue-size: 65536             # 异步落库队列
+  snapshot-interval: 50000     # 每5万条做一次快照
   batch-size: 1000             # 批量落库大小
   idempotency: BLOOM           # 使用布隆过滤器去重

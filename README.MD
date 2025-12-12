@@ -4,7 +4,8 @@
 > 一款基于 LMAX 架构的 Java 高性能内存交易引擎，单机百万 TPS，支持 WAL 持久化与秒级崩溃恢复。
 
 ---
-
+![img_1.png](img/img_1.png)
+---
 ## 📖 Introduction / 项目简介
 
 ### 🇨🇳 中文
@@ -29,8 +30,8 @@ It is not intended to replace the database but serves as a high-performance **Wr
 - 💾 **数据安全 (Crash Safe)**: 采用 Write-Ahead Log (WAL) 机制，每笔交易先落盘再内存计算，支持断电零丢失。
 - 📸 **秒级恢复 (Fast Recovery)**: 自动化的内存快照 (Snapshot) 与增量日志重放机制，服务重启耗时仅需数秒。
 - 🛡️ **幂等去重 (Idempotency)**: 内置基于 BloomFilter 和 LRU 的高性能去重策略，防止重复交易。
-- 🌊 **削峰填谷 (Backpressure)**: 内存计算完毕后，通过异步批量方式落库 (MySQL/PostgreSQL)，保护后端数据库不被流量洪峰击穿。
-- 🔌 **开箱即用 (Easy Integration)**: 提供 Spring Boot Starter，零配置即可嵌入现有项目。
+- 🌊 **削峰填谷 (Backpressure)**: 内存计算完毕后，通过异步批量方式落库，保护后端数据库不被流量洪峰击穿。
+- 🔌 **开箱即用 (Easy Integration)**: 提供 Spring Boot Starter，零配置即可嵌入现有项目，接入Prometheus + Grafana。
 
 ---
 

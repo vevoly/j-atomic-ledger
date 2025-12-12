@@ -5,11 +5,11 @@ import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
+import io.github.vevoly.ledger.api.LedgerCommand;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
 import io.github.vevoly.ledger.api.BusinessProcessor;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
-import io.github.vevoly.ledger.api.LedgerCommand;
 import io.github.vevoly.ledger.core.idempotency.GuavaIdempotencyStrategy;
 import io.github.vevoly.ledger.core.snapshot.SnapshotContainer;
 import io.github.vevoly.ledger.core.snapshot.SnapshotManager;
@@ -220,6 +220,10 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
 
     /**
      * 通用业务处理流程
+     * 支持同步模式和极速模式
+     * 同步模式（HTTP 业务）：Controller 创建 Future 并 set 进去 -> Handler 处理完通知 -> 有回调开销。
+     * 极速模式：Fire & Forget 模式（极致压测/日志收集）：Controller 不创建 Future (或者传 null) -> Handler 检查发现是 null -> 跳过通知 -> 零回调开销。
+     *
      * @param isRecovery 是否处于恢复模式 (恢复模式下不执行落库)
      */
     private void processCommand(C command, boolean isRecovery) {
