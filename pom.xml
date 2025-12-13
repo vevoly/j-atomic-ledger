@@ -6,7 +6,7 @@
 
     <groupId>io.github.vevoly</groupId>
     <artifactId>j-atomic-ledger</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
 
     <name>j-atomic-ledger</name>
@@ -27,6 +27,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 核心依赖版本 -->
+        <revision>1.0.0</revision>
         <spring-boot.version>3.2.0</spring-boot.version>
         <disruptor.version>3.4.4</disruptor.version>
         <chronicle.version>5.27ea11</chronicle.version>

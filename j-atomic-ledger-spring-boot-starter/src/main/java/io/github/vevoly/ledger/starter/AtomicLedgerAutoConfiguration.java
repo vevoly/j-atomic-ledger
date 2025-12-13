@@ -16,29 +16,82 @@ import org.springframework.context.annotation.Configuration;
 import java.io.Serializable;
 
 /**
- * 自动装配类
+ * <h3>核心自动装配类 (Core Auto-Configuration)</h3>
+ *
+ * <p>
+ * 利用 Spring Boot 的自动配置机制，将配置文件、核心引擎与用户定义的业务 Bean 组装在一起。
+ * 只有当用户实现了必要的接口（BusinessProcessor, BatchWriter, LedgerBootstrap）并配置了存储路径时，引擎才会启动。
+ * </p>
+ *
+ * <hr>
+ *
+ * <span style="color: gray; font-size: 0.9em;">
+ * <b>Core Auto-Configuration.</b><br>
+ * Assembles configuration files, the core engine, and user-defined business beans using Spring Boot's auto-configuration mechanism.<br>
+ * The engine starts only when the user implements the required interfaces (BusinessProcessor, BatchWriter, LedgerBootstrap) and configures the storage path.
+ * </span>
  *
  * @author vevoly
+ * @since 1.0.0
  */
 @Configuration
 @EnableConfigurationProperties(AtomicLedgerProperties.class)
 public class AtomicLedgerAutoConfiguration {
 
+    /**
+     * 初始化幂等去重策略 (Initialize Idempotency Strategy).
+     * <p>
+     * 如果用户没有自定义 {@link IdempotencyStrategy} Bean，则根据配置文件创建默认策略。
+     * </p>
+     * <ul>
+     *     <li><b>LRU:</b> 适合小规模精准去重。</li>
+     *     <li><b>BLOOM (Default):</b> 适合海量数据去重。</li>
+     * </ul>
+     *
+     * <hr>
+     * <span style="color: gray; font-size: 0.9em;">
+     * Creates a default strategy based on config if the user hasn't defined a custom {@link IdempotencyStrategy} Bean.
+     * </span>
+     */
     @Bean
     @ConditionalOnMissingBean
     public IdempotencyStrategy idempotencyStrategy(AtomicLedgerProperties props) {
         if (props.getIdempotency() == IdempotencyType.LRU) {
-            // 这里简单硬编码容量，实际也可以做成配置项
-            return new LruIdempotencyStrategy(500_000);
+            return new LruIdempotencyStrategy();
         } else {
-            return new GuavaIdempotencyStrategy(10_000_000, 0.001);
+            return new GuavaIdempotencyStrategy();
         }
     }
 
     /**
-     * 核心引擎 Bean
-     * initMethod = "start": Spring 容器启动时自动启动引擎 (恢复数据)
-     * destroyMethod = "shutdown": Spring 容器销毁时自动优雅停机 (强制快照)
+     * <h3>核心引擎 Bean (Core Ledger Engine Bean)</h3>
+     *
+     * <p>
+     * 组装并启动 {@link LedgerEngine}。
+     * </p>
+     *
+     * <ul>
+     *     <li><b>initMethod = "start":</b> Spring 容器启动时自动执行数据恢复 (WAL Replay) 和 线程启动。</li>
+     *     <li><b>destroyMethod = "shutdown":</b> Spring 容器销毁时自动执行优雅停机 (强制快照 + 排空队列)。</li>
+     * </ul>
+     *
+     * <hr>
+     *
+     * <span style="color: gray; font-size: 0.9em;">
+     * <b>Assembles and starts the {@link LedgerEngine}.</b><br>
+     * <ul>
+     *     <li><b>initMethod = "start":</b> Auto-recovery (WAL Replay) and thread startup on container boot.</li>
+     *     <li><b>destroyMethod = "shutdown":</b> Graceful shutdown (Force snapshot + Drain queue) on container destroy.</li>
+     * </ul>
+     * </span>
+     *
+     * @param props 配置文件属性 (Properties)
+     * @param processor 用户实现的业务逻辑 (User Business Logic)
+     * @param syncer 用户实现的落库逻辑 (User Persistence Logic)
+     * @param idempotencyStrategy 去重策略 (Deduplication Strategy)
+     * @param bootstrap 启动引导配置 (Bootstrap Config)
+     * @param meterRegistry Spring Boot 监控注册表 (Metrics Registry)
+     * @return 组装好的引擎实例 (Configured Engine Instance)
      */
     @Bean(initMethod = "start", destroyMethod = "shutdown")
     @ConditionalOnBean({BusinessProcessor.class, BatchWriter.class, LedgerBootstrap.class})
@@ -49,7 +102,7 @@ public class AtomicLedgerAutoConfiguration {
             BatchWriter<E> syncer,
             IdempotencyStrategy idempotencyStrategy,
             LedgerBootstrap<S, C> bootstrap,
-            MeterRegistry meterRegistry // 自动注入 Spring Boot 的 MeterRegistry
+            MeterRegistry meterRegistry
     ) {
         return new LedgerEngine.Builder<S, C, E>()
                 .baseDir(props.getBaseDir())

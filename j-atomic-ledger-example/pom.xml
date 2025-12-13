@@ -6,7 +6,7 @@
     <parent>
         <groupId>io.github.vevoly</groupId>
         <artifactId>j-atomic-ledger</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>j-atomic-ledger-example</artifactId>
@@ -16,7 +16,7 @@
         <dependency>
             <groupId>io.github.vevoly</groupId>
             <artifactId>j-atomic-ledger-spring-boot-starter</artifactId>
-            <version>${project.version}</version>
+            <version>${revision}</version>
         </dependency>
 
         <!-- Spring Web -->
