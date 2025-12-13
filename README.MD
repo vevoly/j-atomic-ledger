@@ -4,7 +4,7 @@
 > 一款基于 LMAX 架构的 Java 高性能内存交易引擎，单机百万 TPS，支持 WAL 持久化与秒级崩溃恢复。
 
 ---
-![img.png](img/img.png)
+![img.png](img%2Fimg.png)
 ---
 ## 📖 Introduction / 项目简介
 

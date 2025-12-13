@@ -188,6 +188,8 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         private int batchSize = 1000;
         private int queueSize = 65536;
         private int snapshotInterval = 50000;
+        private boolean enableTimeSnapshot = true;
+        private long snapshotTimeIntervalMs = 600 * 1000; // 默认 10分钟 / Default 10 minutes
         // 分片数量配置，默认为 1 / Number of partitions configuration, default is 1
         int partitionCount = 1;
         // Metrics
@@ -217,6 +219,14 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         }
         public Builder<S, C, E> snapshotInterval(int interval) {
             this.snapshotInterval = interval;
+            return this;
+        }
+        public Builder<S, C, E> enableTimeSnapshot(boolean enable) {
+            this.enableTimeSnapshot = enable;
+            return this;
+        }
+        public Builder<S, C, E> snapshotTimeInterval(long millis) {
+            this.snapshotTimeIntervalMs = millis;
             return this;
         }
         public Builder<S, C, E> partitions(int count) {

@@ -23,6 +23,9 @@ import net.openhft.chronicle.queue.ExcerptTailer;
 import java.io.File;
 import java.io.Serializable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -57,20 +60,30 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
 
     // --- 运行时状态 (Runtime State) ---
     @Getter
-    private S state; // 内存中的核心状态对象 / core state object in memory
+    private S state; // 内存中的核心状态对象 / Core state object in memory
     private IdempotencyStrategy idempotencyStrategy;
-    private final AtomicLong lastWalIndex = new AtomicLong(0); // 当前处理到的 WAL 索引 / current WAL index being processed
-    private final Class<C> commandClass; // 用于反序列化 / used for deserialization
+    private final AtomicLong lastWalIndex = new AtomicLong(0); // 当前处理到的 WAL 索引 / Current WAL index being processed
+    private final Class<C> commandClass; // 用于反序列化 / Used for deserialization
 
     // --- 配置 (Configuration) ---
-    private final int partitionIndex; // 分片编号 / partition index
+    private final int partitionIndex; // 分片编号 / Partition index
     @Getter
-    private final String partitionName; // 分片名 / partition name
-    private final int snapshotInterval; // 快照间隔 (多少条 Log 做一次快照) / snapshot interval (how many logs to do a snapshot)
+    private final String partitionName; // 分片名 / Partition name
+    private final int snapshotInterval; // 快照间隔 (多少条 Log 做一次快照) / Snapshot interval (how many logs to do a snapshot)
+    private final boolean enableTimeSnapshot; // 是否开启时间触发 / Whether to enable time-triggered
+    private final long snapshotTimeIntervalMs; // 时间间隔(毫秒) / Time interval (milliseconds)
+
+    // --- 快照运行时状态 (Snapshot Runtime State) ---
+    private long lastSnapshotIndex = 0; // 上次快照时的 Sequence / Sequence of the last snapshot
+    private long lastSnapshotTime = System.currentTimeMillis(); // 上次快照的时间 / Time of the last snapshot
 
     // --- 监控 (Metrics) ---
     private final MeterRegistry registry;
     private final Tags tags;
+
+    // --- 心跳 (Heartbeat) ---
+    private ScheduledExecutorService heartbeatScheduler; // 心跳调度器 / Heartbeat scheduler
+    private static final Object HEARTBEAT_EVENT = new Object(); // 心跳信号对象 / Heartbeat signal object
 
     // 内部事件包装器 (避免让 Disruptor 直接处理泛型) / internal event wrapper (to avoid Disruptor directly handling generics)
     private static class EventWrapper {
@@ -87,6 +100,8 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
         this.processor = builder.getProcessor();
         this.state = builder.getInitialState();
         this.snapshotInterval = builder.getSnapshotInterval();
+        this.enableTimeSnapshot = builder.isEnableTimeSnapshot();
+        this.snapshotTimeIntervalMs = builder.getSnapshotTimeIntervalMs();
         this.commandClass = builder.getCommandClass();
 
         // 1. 初始化文件路径 格式 / initialize file path : baseDir/engineName/partitionName/wal
@@ -145,6 +160,17 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
         // 绑定内部处理器 / bind internal handler
         this.disruptor.handleEventsWith(new CoreEventHandler());
         this.disruptor.start();
+
+        // 启动心跳定时器
+        this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "JAtomicLedger-Heartbeat-" + partitionName);
+            t.setDaemon(true); // 设置为守护线程
+            return t;
+        });
+        this.heartbeatScheduler.scheduleAtFixedRate(
+                this::sendHeartbeat,
+                10, 10, TimeUnit.SECONDS
+        );
         log.info("<<< 分片 [{}] 启动成功！Disruptor 线程已就绪。", partitionName);
     }
 
@@ -207,19 +233,30 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      * 内部 Disruptor 处理器 (Internal Disruptor Handler).
      */
     private class CoreEventHandler implements EventHandler<EventWrapper> {
-        private long lastSnapshotIndex = 0;
         @Override
         public void onEvent(EventWrapper event, long sequence, boolean endOfBatch) {
+            // 1. 心跳检测 / Heartbeat Check
+            if (event.command == HEARTBEAT_EVENT) {
+                try {
+                    // 只检查快照 (心跳本身就是一个 batch 的结束，或者是空闲时的唯一事件)
+                    // Only check snapshot (heartbeat itself is the end of a batch or the only event during idle time)
+                    checkAndSnapshot(sequence);
+                } finally {
+                    event.command = null; // Help GC
+                }
+                return; // 直接返回，不走后面流程
+            }
             C command = (C) event.command;
             try {
-                // 1. 写 WAL (这是唯一会产生 IO 的地方，但因为是顺序写，极快) / Write WAL (This is the only place that will cause IO, but because it is sequential write, it is very fast)
+                // 2. 写 WAL (这是唯一会产生 IO 的地方，但因为是顺序写，极快)
+                // Write WAL (This is the only place that will cause IO, but because it is sequential write, it is very fast)
                 long index = walManager.write(command);
                 lastWalIndex.set(index);
-                // 2. 执行业务逻辑 / Execute business logic
+                // 3. 执行业务逻辑 / Execute business logic
                 processCommand(command, false);
-                // 3. 触发快照检查 (仅在非恢复模式下) / Trigger snapshot check (only in non-recovery mode)
-                if (endOfBatch && (sequence - lastSnapshotIndex >= snapshotInterval)) {
-                    doSnapshot();
+                // 4. 触发快照检查 (仅在非恢复模式下) / Trigger snapshot check (only in non-recovery mode)
+                if (endOfBatch) {
+                    checkAndSnapshot(sequence);
                 }
             } catch (Throwable t) {
                 // 捕获 Throwable，防止 Disruptor 线程因异常而终止 / Catch Throwable to prevent Disruptor thread from terminating due to exception
@@ -233,7 +270,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
                     }
                 }
             } finally {
-                // 4. 清理引用，帮助 GC / Clean up references to help GC
+                // 5. 清理引用，帮助 GC / Clean up references to help GC
                 event.command = null;
             }
         }
@@ -366,22 +403,27 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      */
     public synchronized void shutdown() {
         log.info(">>> 分片 [{}] 正在停止...", partitionName);
-        // 1. 停止 Disruptor (不再接收新请求，并处理完 RingBuffer 中剩余的) / Stop Disruptor (No new requests, process remaining events).
+        // 1. 停止心跳 / Stop heartbeat.
+        if (heartbeatScheduler != null) {
+            heartbeatScheduler.shutdownNow();
+        }
+        // 2. 停止 Disruptor (不再接收新请求，并处理完 RingBuffer 中剩余的) / Stop Disruptor (No new requests, process remaining events).
         if (disruptor != null) {
             disruptor.shutdown();
         }
-        // 2. 强制保存最后一次快照 (非常重要！) / Force Snapshot (Very important!).
-        log.info("分片 [{}] 执行停机快照...", partitionName);
+        // 3. 强制保存最后一次快照 (非常重要！) / Force Snapshot (Very important!).
+        String logContext = String.format("[%s][Shutdown]", partitionName);
+        log.info("{} 执行停机快照...", logContext);
         try {
-            snapshotManager.save(lastWalIndex.get(), state, idempotencyStrategy);
+            snapshotManager.save(lastWalIndex.get(), state, idempotencyStrategy, logContext);
         } catch (Exception e) {
             log.error("分片 [{}] 停机快照保存失败", partitionName, e);
         }
-        // 3. 停止异步写入器 (等待队列排空) / Stop AsyncWriter (Wait for queue drain).
+        // 4. 停止异步写入器 (等待队列排空) / Stop AsyncWriter (Wait for queue drain).
         if (asyncWriter != null) {
             asyncWriter.shutdown();
         }
-        // 4. 关闭 WAL 资源 / Close WAL resources.
+        // 5. 关闭 WAL 资源 / Close WAL resources.
         if (walManager != null) {
             walManager.close();
         }
@@ -389,13 +431,65 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
     }
 
     /**
-     * 执行自动快照 (Internal Helper).
+     * 发送心跳事件到 RingBuffer / Send heartbeat event to RingBuffer
      */
-    private void doSnapshot() {
-        if (log.isDebugEnabled()) {
-            log.debug("分片 [{}] 正在执行自动快照, Index: {}", partitionName, lastWalIndex.get());
+    private void sendHeartbeat() {
+        RingBuffer<EventWrapper> ringBuffer = disruptor.getRingBuffer();
+        long sequence = ringBuffer.next();
+        try {
+            EventWrapper event = ringBuffer.get(sequence);
+            // 装入特殊的心跳对象 / Load a special heartbeat object
+            event.command = HEARTBEAT_EVENT;
+        } finally {
+            ringBuffer.publish(sequence);
         }
-        snapshotManager.save(lastWalIndex.get(), state, idempotencyStrategy);
+    }
+
+    /**
+     * 检查并执行快照 (Check and execute snapshot).
+     */
+    private void checkAndSnapshot(long currentSequence) {
+        boolean trigger = false;
+        String reason = ""; // 触发原因 / Trigger reason
+
+        // 1. 数量触发逻辑 (解决跳跃问题：使用差值判断，而不是取模) / Quantity trigger logic (solve the skipping problem: use the difference value judgment, rather than modulo).
+        // 只要当前进度超过了上次快照点 N 条，就触发 / Trigger as long as the current progress exceeds the last snapshot point N items.
+        if (currentSequence - lastSnapshotIndex >= snapshotInterval) {
+            trigger = true;
+            reason = "CountTrigger"; // 数量触发 / Count trigger
+            log.debug("分片 [{}] 触发快照: 数量阈值已达 ({} >= {})",
+                    partitionName, currentSequence - lastSnapshotIndex, snapshotInterval);
+        }
+
+        // 2. 时间触发逻辑 / Time trigger logic.
+        if (!trigger && enableTimeSnapshot) {
+            long now = System.currentTimeMillis();
+            if (now - lastSnapshotTime >= snapshotTimeIntervalMs) {
+                trigger = true;
+                reason = "TimeTrigger"; // 时间触发 / Time trigger
+                log.debug("分片 [{}] 触发快照: 时间阈值已达 ({}ms >= {}ms)",
+                        partitionName, now - lastSnapshotTime, snapshotTimeIntervalMs);
+            }
+        }
+        if (trigger) {
+            doSnapshot(currentSequence, reason);
+        }
+    }
+
+    /**
+     * 执行自动快照 (Execute save snapshot).
+     */
+    private void doSnapshot(long sequence, String reason) {
+        // 组装日志上下文：[分片名][原因] / Build log context: [partition name][reason]
+        String logContext = String.format("[%s][%s]", partitionName, reason);
+        if (log.isDebugEnabled()) {
+            log.debug("{} 正在执行自动快照...", logContext);
+        }
+        // 保存快照 / Save snapshot
+        snapshotManager.save(lastWalIndex.get(), state, idempotencyStrategy, logContext);
+        // 更新状态 / Update snapshot state
+        this.lastSnapshotIndex = sequence;
+        this.lastSnapshotTime = System.currentTimeMillis();
     }
 
 }

@@ -4,6 +4,8 @@ import io.github.vevoly.ledger.core.idempotency.IdempotencyType;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+
 /**
  * <h3>核心引擎配置属性 (Engine Configuration Properties)</h3>
  *
@@ -35,9 +37,9 @@ public class AtomicLedgerProperties {
     /**
      * 引擎名称 (Engine Name).
      * <p>用于目录隔离。当部署多个引擎实例时，需确保名称唯一。</p>
-     * <span style="color: gray;">Used for directory isolation. Default: "default".</span>
+     * <span style="color: gray;">Used for directory isolation. Default: "JAtomicLedgerEngine".</span>
      */
-    private String engineName = "default";
+    private String engineName = "JAtomicLedgerEngine";
 
     /**
      * 分片数量 (Partition Count).
@@ -69,6 +71,20 @@ public class AtomicLedgerProperties {
      * <span style="color: gray;">Triggers an automatic snapshot after processing this many commands. Default: 50,000.</span>
      */
     private int snapshotInterval = 50000;
+
+    /**
+     * 是否开启基于时间的自动快照 (Enable Time-based Auto Snapshot).
+     * <p>默认开启。</p>
+     * <span style="color: gray;">Default: true.</span>
+     */
+    private boolean enableTimeSnapshot = true;
+
+    /**
+     * 自动快照时间间隔 (Time-based Auto Snapshot Interval).
+     * <p>默认 10分钟。支持格式: 10m, 1h, 30s</p>
+     * <span style="color: gray;">Default: 10m. Supports formats: 10m, 1h, 30s</span>
+     */
+    private Duration snapshotTimeInterval = Duration.ofMinutes(10);
 
     /**
      * 幂等去重策略类型 (Idempotency Strategy Type).

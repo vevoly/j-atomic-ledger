@@ -64,8 +64,9 @@ public class SnapshotManager<S extends Serializable> {
      * @param walIndex 当前 WAL 索引 (Current WAL Index)
      * @param state 内存状态 (Memory State)
      * @param strategy 去重策略 (Idempotency Strategy)
+     * @param logContext 日志上下文 (用于区分分片和触发原因) / Log context (Partition name & Trigger reason)
      */
-    public void save(long walIndex, S state, IdempotencyStrategy strategy) {
+    public void save(long walIndex, S state, IdempotencyStrategy strategy, String logContext) {
         File tempFile = new File(snapshotDir, TEMP_FILE_NAME);
         File finalFile = new File(snapshotDir, SNAPSHOT_FILE_NAME);
         Kryo kryo = createKryo();
@@ -76,16 +77,16 @@ public class SnapshotManager<S extends Serializable> {
             kryo.writeObject(output, container);
             output.flush();
         } catch (Exception e) {
-            log.error("快照写入临时文件失败 / Failed to write snapshot to temp file", e);
+            log.error("{} 快照写入临时文件失败 / Failed to write snapshot to temp file", logContext, e);
             return;
         }
 
         // 2. 原子重命名 (Atomic Move) / Atomic Rename (Atomic Move)
         try {
             Files.move(tempFile.toPath(), finalFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            log.info("快照保存成功。Index: {} / Snapshot saved successfully. ", walIndex);
+            log.info("{} 快照保存成功。Index: {} / Snapshot saved successfully. ", logContext, walIndex);
         } catch (Exception e) {
-            log.error("快照文件重命名失败 / Failed to rename snapshot file", e);
+            log.error("{} 快照文件重命名失败 / Failed to rename snapshot file", logContext, e);
         }
     }
 

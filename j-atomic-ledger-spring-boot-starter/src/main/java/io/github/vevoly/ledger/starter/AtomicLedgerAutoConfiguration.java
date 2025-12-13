@@ -111,6 +111,8 @@ public class AtomicLedgerAutoConfiguration {
                 .queueSize(props.getQueueSize())
                 .batchSize(props.getBatchSize())
                 .snapshotInterval(props.getSnapshotInterval())
+                .enableTimeSnapshot(props.isEnableTimeSnapshot())
+                .snapshotTimeInterval(props.getSnapshotTimeInterval().toMillis())
                 .processor(processor)
                 .syncer(syncer)
                 .idempotency(idempotencyStrategy)
