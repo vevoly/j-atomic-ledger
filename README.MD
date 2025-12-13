@@ -5,6 +5,8 @@
 
 ---
 ![img.png](img%2Fimg.png)
+此次测试是在 Mac M1 芯片只有4核的环境下跑出，单核跑出10万TPS。若是16核服务器，轻松上百万TPS。  
+This test is run on a Mac M1 chip with only 4 cores, achieving 100,000 TPS. If it is a 16-core server, it can easily reach millions of TPS.
 ---
 ## 📖 Introduction / 项目简介
 
@@ -58,7 +60,7 @@ It is not intended to replace the database but serves as a high-performance **Wr
 
 ## 📦 Installation / 安装
 
-*(Coming Soon)*
+*敬请期待 (Coming Soon)*
 
 ## 📄 License
 
