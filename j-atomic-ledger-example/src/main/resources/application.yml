@@ -20,7 +20,7 @@ j-atomic-ledger:
   base-dir: ./data/ledger-demo # 数据存储路径
   engine-name: wallet-core     # 引擎名称
   partitions: 4                # 分片数量
-  queue-size: 65536             # 异步落库队列
+  queue-size: 65536            # 异步落库队列
   snapshot-interval: 50000     # 每5万条做一次快照
   enable-time-snapshot: true   # 开启时间快照
   snapshot-time-interval: 20s  # 多少时间保存一次快照，支持 ms、s、m、h、d 单位

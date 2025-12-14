@@ -36,13 +36,27 @@ import java.io.Serializable;
 public interface BusinessProcessor<S extends Serializable, C extends Serializable, E> {
 
     /**
-     * 处理业务逻辑.
+     * 执行业务逻辑.
      *
-     * <span style="color: gray; font-size: 0.9em;">Process business logic.</span>
+     * <p>
+     * 在这里你可以进行：
+     * 1. <b>前置校验：</b> 检查余额、检查账户状态（冻结/黑名单）、检查交易限额。
+     * 2. <b>状态更新：</b> 修改内存中的余额。
+     * 3. <b>构建增量：</b> 返回需要持久化到数据库的实体对象。
+     * </p>
+     *
+     * <hr>
+     * <span style="color: gray; font-size: 0.9em;">
+     * <b>Execute Business Logic.</b><br>
+     * Here you can perform:<br>
+     * 1. <b>Pre-validation:</b> Check balance, account status (frozen/blacklist), transaction limits.<br>
+     * 2. <b>State Update:</b> Mutate balance in memory.<br>
+     * 3. <b>Build Increment:</b> Return the entity object for DB persistence.
+     * </span>
      *
      * @param state   当前内存状态 (Current Memory State)
      * @param command 接收到的命令 (Received Command)
-     * @return 需要异步落库的增量实体 (Incremental entity for async persistence). 返回 null 表示本次操作无需落库。
+     * @return 需要异步落库的增量实体 (Incremental Entity for Async Persistence)
      */
     E process(S state, C command);
 }
