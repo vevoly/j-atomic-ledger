@@ -10,7 +10,30 @@
     <packaging>pom</packaging>
 
     <name>j-atomic-ledger</name>
-    <description>A lightning-fast, crash-safe, in-memory transaction engine.</description>
+    <description>A Java high-performance memory transaction engine based on the LMAX architecture, single machine million TPS, supports WAL persistence and second-level crash recovery.</description>
+    <url>https://github.com/vevoly/j-atomic-ledger</url>
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>vevoly</id>
+            <name>vevoly</name>
+            <email>vevolyang@gmail.com</email>
+            <roles>
+                <role>Project Manager</role>
+                <role>Architect</role>
+            </roles>
+        </developer>
+    </developers>
+    <scm>
+        <connection>scm:git:git://github.com/vevoly/j-atomic-ledger.git</connection>
+        <developerConnection>scm:git:ssh://github.com:vevoly/j-atomic-ledger.git</developerConnection>
+        <url>http://github.com/vevoly/j-atomic-ledger/tree/master</url>
+    </scm>
 
     <modules>
         <module>j-atomic-ledger-api</module>
@@ -18,6 +41,18 @@
         <module>j-atomic-ledger-spring-boot-starter</module>
         <module>j-atomic-ledger-example</module>
     </modules>
+
+    <!-- 指定发布仓库 -->
+    <distributionManagement>
+        <snapshotRepository>
+            <id>ossrh</id> <!-- 对应 settings.xml -->
+            <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+            <id>ossrh</id>
+            <url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+    </distributionManagement>
 
     <properties>
         <!-- 基础环境 -->
@@ -118,16 +153,118 @@
 
     <build>
         <plugins>
-            <!-- 编译插件 -->
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.6.0</version>
+                <configuration>
+                    <!-- 核心模式：解析 CI Friendly 变量 -->
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
                 <configuration>
                     <source>${java.version}</source>
                     <target>${java.version}</target>
+                    <encoding>UTF-8</encoding>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.6.3</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- 关闭 DocLint 检查，允许不规范的 HTML -->
+                    <doclint>none</doclint>
+                    <!-- 即使有错误也不要中断构建 -->
+                    <failOnError>false</failOnError>
+                    <!-- 设置编码，防止中文乱码 -->
+                    <charset>UTF-8</charset>
+                    <encoding>UTF-8</encoding>
+                    <docencoding>UTF-8</docencoding>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>3.2.4</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.4.0</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <publishingServerId>central</publishingServerId>
+                    <tokenAuth>true</tokenAuth>
+                    <!-- 设为 true 会自动发布；设为 false 需要去网页手动点击 Publish -->
+                    <autoPublish>true</autoPublish>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
 

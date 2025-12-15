@@ -10,6 +10,10 @@
     </parent>
 
     <artifactId>j-atomic-ledger-spring-boot-starter</artifactId>
+    <name>j-atomic-ledger-spring-boot-starter</name>
+    <packaging>jar</packaging>
+    <url>https://github.com/vevoly/j-atomic-ledger</url>
+    <description>Spring Boot Starter for j-atomic-ledger</description>
 
     <dependencies>
 

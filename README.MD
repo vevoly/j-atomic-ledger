@@ -1,7 +1,7 @@
 # j-atomic-ledger
 #### 作者 Author：VEVOLY
-> **A lightning-fast, crash-safe, in-memory transaction engine for Java.**  
-> **一款基于 LMAX 架构的 Java 高性能内存交易引擎，单机百万 TPS，支持 WAL 持久化与秒级崩溃恢复。**
+> **一款基于 LMAX 架构的 Java 高性能内存交易引擎，单机百万 TPS，支持 WAL 持久化与秒级崩溃恢复。**  
+> A Java high-performance memory transaction engine based on the LMAX architecture, single machine million TPS, supports WAL persistence and second-level crash recovery.
 ---
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![JDK](https://img.shields.io/badge/JDK-17%2B-green.svg)]()

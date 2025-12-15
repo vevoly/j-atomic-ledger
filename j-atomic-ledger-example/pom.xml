@@ -10,6 +10,13 @@
     </parent>
 
     <artifactId>j-atomic-ledger-example</artifactId>
+    <name>j-atomic-ledger-example</name>
+    <url>https://github.com/vevoly/j-atomic-ledger</url>
+    <description>Example models for j-atomic-ledger</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
 
     <dependencies>
 
