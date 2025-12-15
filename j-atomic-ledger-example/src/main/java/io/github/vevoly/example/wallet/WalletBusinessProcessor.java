@@ -85,12 +85,12 @@ public class WalletBusinessProcessor implements BusinessProcessor<WalletState, T
         entity.setUserId(cmd.getUserId());
         entity.setBalance(MoneyUtils.toDb(newBalance));
 
-        // 4. 主动通知 Future，返回结果对象
+        // 4. 主动通知 Future，返回结果对象 / Notify Future actively, return result object
         if (cmd.getFuture() != null) {
             TradeResult result = TradeResult.success(cmd.getUserId(), cmd.getTxId(), MoneyUtils.toDb(newBalance));
             result.setLatencyNs(System.nanoTime() - start);
 
-            // 填入结果
+            // 填入结果 / Fill in the result
             cmd.getFuture().complete(result);
         }
         // LongAdder 的性能极其恐怖，对 TPS 几乎零影响

@@ -52,7 +52,7 @@ public class TradeCommand extends BaseLedgerCommand {
 
     /**
      * 业务字段：用户ID.
-     * <br><span style="color: gray;">Business Field: User ID.</span>
+     * Business Field: User ID.
      */
     private Long userId;
 
@@ -61,8 +61,9 @@ public class TradeCommand extends BaseLedgerCommand {
 
     /**
      * 定义分片路由规则.
-     *
-     * @return 返回 userId 的字符串形式，确保同一用户的请求进入同一个 Disruptor 线程 (Return userId as routing key).
+     * Define the sharding routing rule.
+     * @return 返回 userId 的字符串形式，确保同一用户的请求进入同一个 Disruptor 线程
+     * Return userId as a string to ensure that requests from the same user enter the same Disruptor thread.
      */
     @Override
     public String getRoutingKey() {
@@ -70,9 +71,8 @@ public class TradeCommand extends BaseLedgerCommand {
     }
 
     /**
-     * 序列化扩展：写入业务字段.
-     * <p>(父类已处理 txId 和 amount)</p>
-     * <span style="color: gray;">Serialization Extension: Write business fields (Parent handles txId/amount).</span>
+     * 序列化扩展：写入业务字段. / Serialization Extension: Write business fields.
+     * <p>父类已处理 txId 和 amount / txId and amount fields are handled in the parent class </p>
      */
     @Override
     protected void writeBizData(BytesOut<?> bytes) {
@@ -80,9 +80,8 @@ public class TradeCommand extends BaseLedgerCommand {
     }
 
     /**
-     * 反序列化扩展：读取业务字段.
-     * <p>(读取顺序必须与写入顺序严格一致！)</p>
-     * <span style="color: gray;">Deserialization Extension: Read business fields (Must match write order!).</span>
+     * 反序列化扩展：读取业务字段. / Deserialization Extension: Read business fields
+     * <p>读取顺序必须与写入顺序严格一致！/ Must match write order!</p>
      */
     @Override
     protected void readBizData(BytesIn<?> bytes) {
