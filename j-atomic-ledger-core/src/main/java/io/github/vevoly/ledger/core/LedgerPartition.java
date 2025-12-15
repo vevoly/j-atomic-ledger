@@ -328,13 +328,18 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
             E entity = processor.process(state, command);
             // 3. 记录幂等性 / Record idempotency
             idempotencyStrategy.add(txId);
-            // 4. 触发异步落库 (恢复模式下不需要，因为数据库里应该已经有了，或者依靠最终快照) / Trigger asynchronous database write (no need in recovery mode, as it should already be in the database or rely on the final snapshot)
+            // 4. 触发异步落库 (恢复模式下不需要，因为数据库里应该已经有了，或者依靠最终快照)
+            // Trigger asynchronous database write (no need in recovery mode, as it should already be in the database or rely on the final snapshot)
             // 恢复模式只恢复内存 / Recovery mode only restores memory
             if (!isRecovery && entity != null) {
                 asyncWriter.submit(entity);
             }
-            if (future != null) {
-                future.complete("SUCCESS");
+            // 如果业务层(Processor)里已经调用了 future.complete(result)，这里 isDone() 就是 true，跳过。
+            // If the business layer (Processor) has already called future.complete(result), here isDone() is true, skip.
+            if (future != null && !future.isDone()) {
+                // 如果业务层忘了调，这里给个兜底的 null，防止 Controller 死等。
+                // If the business layer forgot to call, here is a bottom line null to prevent the Controller from waiting indefinitely.
+                future.complete(null);
             }
         } catch (Exception e) {
             log.error("业务逻辑执行异常", e);

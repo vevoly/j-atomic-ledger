@@ -1,6 +1,6 @@
 package io.github.vevoly.example.wallet;
 
-import io.github.vevoly.example.wallet.component.PerfMonitor;
+import io.github.vevoly.example.wallet.domain.TradeResult;
 import io.github.vevoly.example.wallet.domain.TradeCommand;
 import io.github.vevoly.example.wallet.domain.WalletState;
 import io.github.vevoly.example.wallet.entity.UserWalletEntity;
@@ -60,6 +60,7 @@ public class WalletBusinessProcessor implements BusinessProcessor<WalletState, T
      */
     @Override
     public UserWalletEntity process(WalletState state, TradeCommand cmd) {
+        long start = System.nanoTime();
         // 1. 业务逻辑：获取余额 / Business logic: Get balance
         long currentBalance = state.getBalances().getOrDefault(cmd.getUserId(), 0L);
 
@@ -83,6 +84,15 @@ public class WalletBusinessProcessor implements BusinessProcessor<WalletState, T
         UserWalletEntity entity = new UserWalletEntity();
         entity.setUserId(cmd.getUserId());
         entity.setBalance(MoneyUtils.toDb(newBalance));
+
+        // 4. 主动通知 Future，返回结果对象
+        if (cmd.getFuture() != null) {
+            TradeResult result = TradeResult.success(cmd.getUserId(), cmd.getTxId(), MoneyUtils.toDb(newBalance));
+            result.setLatencyNs(System.nanoTime() - start);
+
+            // 填入结果
+            cmd.getFuture().complete(result);
+        }
         // LongAdder 的性能极其恐怖，对 TPS 几乎零影响
 //        perfMonitor.increment();
         return entity;

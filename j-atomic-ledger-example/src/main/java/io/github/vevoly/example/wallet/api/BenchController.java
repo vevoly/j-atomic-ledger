@@ -2,6 +2,7 @@ package io.github.vevoly.example.wallet.api;
 
 import io.github.vevoly.example.wallet.component.PerfMonitor;
 import io.github.vevoly.example.wallet.domain.TradeCommand;
+import io.github.vevoly.example.wallet.domain.TradeResult;
 import io.github.vevoly.example.wallet.domain.WalletState;
 import io.github.vevoly.example.wallet.entity.UserWalletEntity;
 import io.github.vevoly.ledger.api.utils.MoneyUtils;
@@ -52,7 +53,7 @@ public class BenchController {
     private LedgerEngine<WalletState, TradeCommand, UserWalletEntity> engine;
 
     // 压测接口：模拟并发请求
-    // URL: RL: http://localhost:8080/bench?count=100000&threads=50&users=4
+    // URL: http://localhost:8080/bench?count=100000&threads=50&users=4
     /**
      * <h3>标准压测接口 (Standard Benchmark)</h3>
      * <p>
@@ -115,10 +116,22 @@ public class BenchController {
 
                         // 3.3 设置回调 (Standard Mode) / Set Callback
                         future.whenComplete((res, ex) -> {
+                            if (ex != null) {
+                                log.error("交易失败 / Trade failed", ex);
+                            } else {
+                                if (res instanceof TradeResult) {
+                                    TradeResult result = (TradeResult) res;
+                                    Long userId = result.getUserId();
+                                    String transactionId = result.getTxId();
+                                    BigDecimal balance = result.getCurrentBalance();
+                                    long latency = result.getLatencyNs();
+//                                    log.info("请求结果：userId={}, TxId={}, 最新余额={}, 耗时={}ns", userId, transactionId, balance, latency);
+                                }
+                            }
                             completedCount.increment();
                             // 检查是否全部完成 / Check if finished
                             if (completedCount.sum() == count) {
-                                printResult("标准模式", startTime, count, userCount, startBalanceSnapshot, amountLong);
+                                printResult("标准模式 / Standard mode", startTime, count, userCount, startBalanceSnapshot, amountLong);
                             }
                         });
 
@@ -204,7 +217,7 @@ public class BenchController {
                 long current = monitor.getCount();
                 if (current >= count) {
                     // 打印结果并校验资金 (即使是极速模式，钱也不能错) / Print result and verify balance
-                    printResult("极速模式", monitor.getStartTime(), count, userCount, startBalanceSnapshot, amountLong);
+                    printResult("极速模式 / Fire-and-Forget", monitor.getStartTime(), count, userCount, startBalanceSnapshot, amountLong);
                     break;
                 }
                 try { Thread.sleep(10); } catch (InterruptedException e) {}
