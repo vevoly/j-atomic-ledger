@@ -4,6 +4,10 @@ import io.github.vevoly.ledger.api.BatchWriter;
 import io.github.vevoly.ledger.api.BusinessProcessor;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
 import io.github.vevoly.ledger.api.LedgerCommand;
+import io.github.vevoly.ledger.api.exception.InitializationException;
+import io.github.vevoly.ledger.api.exception.JAtomicLedgerErrorCode;
+import io.github.vevoly.ledger.api.exception.JAtomicLedgerException;
+import io.github.vevoly.ledger.core.metrics.LedgerMetricManager;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * <h3>核心账本引擎 (Core Ledger Engine)</h3>
@@ -62,16 +67,22 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
     private final String engineName;
 
     /**
+     * 监控管理器 (用户自定义前缀)
+     * <br><span style="color: gray;">Metric manager (User customize metric suffix)</span>
+     */
+    private final LedgerMetricManager metricManager;
+
+    /**
      * 私有构造函数 (Private Constructor).
      * <p>强制使用 Builder 创建，在此处初始化所有分片。</p>
      */
-    private LedgerEngine(Builder<S, C, E> builder) {
+    private LedgerEngine(Builder<S, C, E> builder, LedgerMetricManager metricManager) throws InitializationException {
+        this.metricManager = metricManager;
         this.engineName = builder.engineName;
         this.partitionCount = builder.partitionCount;
-
         // 校验分片数 / Validate partition count
         if (this.partitionCount <= 0) {
-            throw new IllegalArgumentException("Partition count must be > 0");
+            throw new InitializationException("Partition count must be greater than 0.");
         }
         this.partitions = new ArrayList<>(partitionCount);
         log.info("正在初始化引擎 [{}], 分片数: {}", engineName, partitionCount);
@@ -82,7 +93,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
             String partitionName = String.format("%s-p%d", engineName, i);
             // 2. 创建分片实例 / Build partition instance
             // 自动在 baseDir 下创建子目录 /p0, /p1 来隔离 WAL 和 Snapshot / Auto create subdirectories /p0, /p1 to isolate WAL and Snapshot
-            LedgerPartition<S, C, E> partition = new LedgerPartition<>(i, partitionName, builder);
+            LedgerPartition<S, C, E> partition = new LedgerPartition<>(i, partitionName, builder, metricManager);
             // 3. 放入容器 / Put in container
             partitions.add(partition);
         }
@@ -92,7 +103,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
      * 启动所有分片 (Start All Partitions).
      * <p>依次启动内部的每个分片，执行恢复逻辑和线程初始化。</p>
      */
-    public synchronized void start() {
+    public synchronized void start() throws InitializationException {
         log.info(">>> 正在启动引擎 [{}] 的所有分片...", engineName);
         for (LedgerPartition<S, C, E> partition : partitions) {
             partition.start();
@@ -113,7 +124,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
      *
      * @param command 业务命令 (Business Command)
      */
-    public void submit(C command) {
+    public void submit(C command) throws JAtomicLedgerException {
         // 1. 获取路由键 (例如 userId) / Get routing key (e.g. userId)
         String routingKey = command.getRoutingKey();
         // 2. 计算哈希槽 / Calculate hash slot
@@ -151,7 +162,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
      * @param routingKey 路由键 (如 userId)
      * @return 该分片持有的 State 对象 (State object held by the partition)
      */
-    public S getStateBy(String routingKey) {
+    public S getStateBy(String routingKey) throws JAtomicLedgerException {
         if (routingKey == null) return null;
         // 1. 计算哈希槽 / Calculate hash slot
         int index = getPartitionIndex(routingKey);
@@ -165,9 +176,9 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
      * @param routingKey 路由键
      * @return 分片索引
      */
-    private int getPartitionIndex(String routingKey) {
+    private int getPartitionIndex(String routingKey) throws JAtomicLedgerException {
         if (routingKey == null) {
-            throw new IllegalArgumentException("Routing key cannot be null");
+            throw new JAtomicLedgerException(JAtomicLedgerErrorCode.INVALID_ARGUMENT, "Routing key cannot be null");
         }
         // 使用位运算保证正数，效率比 Math.abs 高，且能处理 Integer.MIN_VALUE 的边界情况
         // Use bitwise operation to ensure positive number, efficiency is higher than Math.abs, and can handle the boundary case of Integer.MIN_VALUE
@@ -194,8 +205,9 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         int partitionCount = 1;
         // Metrics
         private MeterRegistry meterRegistry;
+        private String metricsPrefix;
         // 用户扩展点 / User Extensions
-        private S initialState;
+        private Supplier<S> initialStateSupplier;
         private BusinessProcessor<S, C, E> processor;
         private BatchWriter<E> syncer;
         private IdempotencyStrategy idempotencyStrategy;
@@ -237,8 +249,12 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
             this.meterRegistry = registry;
             return this;
         }
-        public Builder<S, C, E> initialState(S state) {
-            this.initialState = state;
+        public Builder<S, C, E> metricsPrefix(String prefix) {
+            this.metricsPrefix = prefix;
+            return this;
+        }
+        public Builder<S, C, E> initialStateSupplier(Supplier<S> supplier) {
+            this.initialStateSupplier = supplier;
             return this;
         }
         public Builder<S, C, E> processor(BusinessProcessor<S, C, E> p) {
@@ -269,11 +285,15 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
             }
             return this.meterRegistry;
         }
-        public LedgerEngine<S, C, E> build() {
-            if (processor == null || syncer == null || initialState == null) {
-                throw new IllegalArgumentException("Processor, Syncer, and InitialState are required.");
+        public Supplier<S> getInitialStateSupplier() {
+            return this.initialStateSupplier;
+        }
+        public LedgerEngine<S, C, E> build() throws InitializationException {
+            if (processor == null || syncer == null || initialStateSupplier == null) {
+                throw new InitializationException("Processor, Syncer, and InitialStateSupplier are required.");
             }
-            return new LedgerEngine<>(this);
+            LedgerMetricManager metricManager = new LedgerMetricManager(this.metricsPrefix);
+            return new LedgerEngine<>(this, metricManager);
         }
     }
 

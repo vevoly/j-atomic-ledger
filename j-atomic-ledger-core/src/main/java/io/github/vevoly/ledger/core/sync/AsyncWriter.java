@@ -1,11 +1,11 @@
 package io.github.vevoly.ledger.core.sync;
 
 import io.github.vevoly.ledger.api.BatchWriter;
+import io.github.vevoly.ledger.core.metrics.LedgerMetricManager;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
-import io.github.vevoly.ledger.core.metrics.LedgerMetricConstants;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -74,6 +74,7 @@ public class AsyncWriter<E extends Serializable> extends Thread {
     private final int batchSize;
 
     private final MeterRegistry registry;
+    private final LedgerMetricManager metricManager;
     private final Tags tags;
     private Timer dbBatchTimer;
 
@@ -86,11 +87,12 @@ public class AsyncWriter<E extends Serializable> extends Thread {
      * @param registry 监控注册表 / Metric registry
      * @param tags 监控标签 / Metric tags
      */
-    public AsyncWriter(int bufferSize, int batchSize, BatchWriter<E> syncer, MeterRegistry registry, Tags tags) {
+    public AsyncWriter(int bufferSize, int batchSize, BatchWriter<E> syncer, MeterRegistry registry, LedgerMetricManager metricManager, Tags tags) {
         this.queue = new LinkedBlockingQueue<>(bufferSize);
         this.batchSize = batchSize;
         this.syncer = syncer;
         this.registry = registry;
+        this.metricManager = metricManager;
         this.tags = tags;
         this.setName("J-Atomic-Ledger-AsyncWriter");
     }
@@ -117,9 +119,9 @@ public class AsyncWriter<E extends Serializable> extends Thread {
         if (running) return;
         // 1. 注册队列积压监控 (Gauge) / Register queue size monitoring (Gauge)
         // 这是一个动态指标，Micrometer 会定期调用 queue.size() / This is dynamic, Micrometer polls queue.size() periodically
-        registry.gauge(LedgerMetricConstants.METRIC_DB_QUEUE_SIZE, tags, queue, BlockingQueue::size);
+        registry.gauge(metricManager.dbQueueSize, tags, queue, BlockingQueue::size);
         // 2. 预创建 DB 耗时 Timer / Pre-create DB latency Timer
-        this.dbBatchTimer = registry.timer(LedgerMetricConstants.METRIC_DB_BATCH_TIME, tags);
+        this.dbBatchTimer = registry.timer(metricManager.dbBatchTime, tags);
         this.running = true;
         super.start();
         log.info("AsyncWriter 启动成功 / AsyncWriter started successfully");

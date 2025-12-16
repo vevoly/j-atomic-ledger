@@ -54,7 +54,7 @@ public class GuavaIdempotencyStrategy implements IdempotencyStrategy {
      */
     public GuavaIdempotencyStrategy() {
         // 默认参数，实际恢复时会被快照数据覆盖 / default parameters, to be overwritten by snapshot data
-        this(1_000_000, 0.001);
+        this(10_000_000, 0.00001);
     }
 
     /**

@@ -1,11 +1,13 @@
 package io.github.vevoly.ledger.starter;
 
 import io.github.vevoly.ledger.api.*;
+import io.github.vevoly.ledger.api.exception.InitializationException;
 import io.github.vevoly.ledger.core.LedgerEngine;
 import io.github.vevoly.ledger.core.idempotency.GuavaIdempotencyStrategy;
 import io.github.vevoly.ledger.core.idempotency.IdempotencyType;
 import io.github.vevoly.ledger.core.idempotency.LruIdempotencyStrategy;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -90,7 +92,7 @@ public class AtomicLedgerAutoConfiguration {
      * @param syncer 用户实现的落库逻辑 (User Persistence Logic)
      * @param idempotencyStrategy 去重策略 (Deduplication Strategy)
      * @param bootstrap 启动引导配置 (Bootstrap Config)
-     * @param meterRegistry Spring Boot 监控注册表 (Metrics Registry)
+     * @param registryProvider Spring Boot 监控注册表 (Metrics Registry)
      * @return 组装好的引擎实例 (Configured Engine Instance)
      */
     @Bean(initMethod = "start", destroyMethod = "shutdown")
@@ -102,8 +104,10 @@ public class AtomicLedgerAutoConfiguration {
             BatchWriter<E> syncer,
             IdempotencyStrategy idempotencyStrategy,
             LedgerBootstrap<S, C> bootstrap,
-            MeterRegistry meterRegistry
-    ) {
+            ObjectProvider<MeterRegistry> registryProvider
+    ) throws InitializationException {
+        // 尝试获取 Bean，如果没有则返回 null / Try to get Bean, if nothing else return null
+        MeterRegistry meterRegistry = registryProvider.getIfAvailable();
         return new LedgerEngine.Builder<S, C, E>()
                 .baseDir(props.getBaseDir())
                 .name(props.getEngineName())
@@ -116,9 +120,10 @@ public class AtomicLedgerAutoConfiguration {
                 .processor(processor)
                 .syncer(syncer)
                 .idempotency(idempotencyStrategy)
-                .initialState(bootstrap.getInitialState())
+                .initialStateSupplier(() -> bootstrap.getInitialState()) // 延迟加载 / Lazy load
                 .commandClass((bootstrap.getCommandClass()))
                 .meterRegistry(meterRegistry)
+                .metricsPrefix(props.getMetricsPrefix())
                 .build();
     }
 }

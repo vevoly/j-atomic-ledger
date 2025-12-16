@@ -19,6 +19,7 @@ logging:
 j-atomic-ledger:
   base-dir: ./data/ledger-demo # 数据存储路径
   engine-name: wallet-core     # 引擎名称
+  metrics-prefix: wallet       # metrics 前缀
   partitions: 4                # 分片数量
   queue-size: 65536            # 异步落库队列
   snapshot-interval: 50000     # 每5万条做一次快照

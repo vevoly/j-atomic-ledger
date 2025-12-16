@@ -103,7 +103,7 @@ graph TD
 <dependency>
     <groupId>io.github.vevoly</groupId>
     <artifactId>j-atomic-ledger-spring-boot-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 ### 2.2 配置文件 / Configuration (application.yml)
@@ -111,6 +111,7 @@ graph TD
 j-atomic-ledger:
   base-dir: ./data/ledger-data # 数据存储路径 / Data storage path
   engine-name: wallet-core     # 引擎名称 / Engine name
+  metrics-prefix: wallet       # metrics 前缀 / Metrics prefix
   partitions: 4                # 分片数量 / Number of partitions
   queue-size: 65536            # 异步落库队列 / Async DB queue size
   snapshot-interval: 50000     # 多少条做一次快照 / How many records to snapshot
@@ -288,7 +289,7 @@ Since Java 17+, strong encapsulation requires specific JVM flags to allow Chroni
 --add-opens=java.base/java.io=ALL-UNNAMED
 --add-opens=java.base/java.util=ALL-UNNAMED
 ```
-### 3.3 去重策略
+### 3.3 去重策略 / Idempotency Strategy
 在配置文件中选择策略 / Configure in application.yml:
 > * BLOOM (Default)  
 布隆过滤器，高性能，极低内存(1千万条记录仅10MB)。适合海量数据去重。  
@@ -302,7 +303,7 @@ High performance, low memory (10MB for 10M records). Tiny false-positive rate. B
     Sync Mode (Standard): Pass a CompletableFuture into the command. The controller waits for future.get().
 > * 极速模式：向 Command 传入 null。引擎跳过通知逻辑，获得物理极限吞吐量。  
     Fire-and-Forget (Extreme): Pass null as future. The engine skips notification overhead, achieving maximum TPS.
-### 3.5 集群部署
+### 3.5 集群部署 / Cluster Deployment
 #### j-atomic-ledger 是有状态引擎 / j-atomic-ledger is a Stateful engine.
 敬请期待下个版本 / Coming soon in next version.
 ### 3.6 监控
@@ -312,7 +313,7 @@ High performance, low memory (10MB for 10M records). Tiny false-positive rate. B
 > * j-atomic-ledger.db.queue.size: 背压指标，堆积说明数据库慢。  
   Backpressure Indicator. If high, the database is the bottleneck. 
 > * j-atomic-ledger.db.batch.time: 数据库写入耗时。Database write latency. 
-### 3.7 屏蔽 Chronicle 噪音
+### 3.7 屏蔽 Chronicle 噪音 / Disable Chronicle noise
  * 屏蔽Info 级别噪音 / Disable Chronicle Info level noise
  ``` yaml
 logging:
@@ -334,33 +335,124 @@ public class WalletApplication {
     }
 }
  ```
-### 3.8 高性能读视图
+### 3.8 高性能读视图 / High performance read view
 
 ---
 ## ❓ 4. 常见问题 / FAQ 
-### 4.1 宕机了数据会丢失吗？
+### 4.1 宕机了数据会丢失吗？ / Is data lost when the server crashes?
 不会。 所有指令在处理前都会通过内存映射写入磁盘 WAL。重启时，引擎会自动重放日志，数据零丢失。    
 No. Every command is written to the WAL (Write-Ahead Log) on disk using memory mapping before processing. On restart, the engine automatically replays the WAL to restore the memory state.
-### 4.2 数据库挂了怎么办？
+### 4.2 数据库挂了怎么办？ / What if the DB is dead?
 业务不受影响。 引擎依然可以接单和计算。数据会堆积在异步队列中。后台线程会无限重试，直到数据库恢复，自动将积压数据写入。  
 The engine will continue to process requests in memory. Data waiting for persistence will pile up in the AsyncQueue. The BatchWriter will retry indefinitely until the DB recovers.
-### 4.3 为什么要使用WAL？
+### 4.3 为什么要使用WAL？ / Why use WAL?
 数据库事务涉及随机 I/O 和锁竞争（毫秒级）。WAL 采用顺序追加写，速度媲美内存（纳秒级）。这是实现百万 TPS 的秘诀。  
 Database transactions involve random I/O and locks (ms level). WAL uses Sequential Write (append-only), which is as fast as memory (ns level). This is the secret to 1 million TPS.
-### 4.4 为什么要使用Kryo序列化？
+### 4.4 为什么要使用Kryo序列化? / Why use Kryo serialization?
 Java 原生序列化效率低且体积大。Kryo 生成的二进制极其紧凑，能极大降低 IO 开销，实现秒级启动恢复。  
 Java native serialization is slow and verbose. Kryo produces extremely compact binary data, reducing IO overhead and enabling Second-level Startup/Recovery.
-### 4.5 为什么内存计算必须使用long？
+### 4.5 为什么内存计算必须使用long？ / Why must memory calculation use long?
 BigDecimal 是对象，会产生大量 GC 压力。long 是 CPU 原生类型。在高频交易场景下，零 GC 对于保持低延迟至关重要。  
 BigDecimal creates objects, causing GC (Garbage Collection) pressure. long is a primitive type handled directly by the CPU. In high-frequency trading, Zero-GC is crucial for stable latency.
-### 4.3 非金融系统能用吗？
+### 4.3 非金融系统能用吗？ / Can it be used in non-financial systems?
 完全可以。 任何需要“严格顺序”和“高吞吐”的场景都适用，例如 IM 消息 ID 生成、秒杀库存扣减、全局精准限流 等。  
 Yes. It is perfect for any scenario requiring "Strict Sequencing" and "High Throughput", such as:
 IM Generation: Generating strictly increasing message IDs for chat groups.
 Inventory: Flash sale inventory deduction.
 Rate Limiting: Global precise sliding window counters.
-
-
+### 4.4 如何保证“内存计算、数据库修改、账变记录”的事务性？ / How to ensure the transactionality of "memory calculation, database modification, and account change record"?
+LMAX 架构重新定义了“事务”。在传统架构中，事务 = BEGIN TRANSACTION ... COMMIT。
+而在 j-atomic-ledger 中，事务 = “一个不可分割的、已落盘的事件（Command）”。我们通过3道防线来保证原子性：
+1. 单线程处理 (Effective Atomicity)
+ * 机制：Disruptor 保证了对于同一个用户（同一个分片），所有的 Command 都是在一个线程里串行执行的。
+ * 效果：当 process 方法执行时，没有其他线程会来争抢这个用户的内存数据。
+   * state.balance += amount;
+   * E entity = new WalletEntity(...); (构建账变记录)
+   * 这两行代码在单线程中就是**“事实上的原子操作”**，绝不会出现“余额改了但记录没生成”的情况。
+2. WAL 预写日志 (Durability & Rollback Safety)
+ * 机制：在执行 process 之前，CoreEventHandler 已经把 TradeCommand 写入了本地 WAL 文件。这是真正的“Commit Point”。
+ * 效果：
+   * 情况 A：process 执行失败 (比如 RuntimeException: 余额不足)。
+     * 内存 state 没有被修改。
+     * 异步落库队列没有收到新的 Entity。
+     * WAL 里记录了这次“失败的尝试”，可供审计。
+     * 结果：系统状态保持一致。
+   * 情况 B：写完 WAL 后，服务器断电。
+     * 内存 state 丢失。
+     * 重启后：recover() 过程会重放这条 WAL 记录，重新执行 process，把断电前没完成的操作补上。
+     * 结果：系统自愈到一致状态。
+3. 异步落库的无限重试 (Async write DB and retry infinitely)
+ * 机制：AsyncWriter 内部有 while(!success) 循环。
+ * 效果：
+   * process 成功后，Entity 被放入了落库队列。
+   * 如果此时数据库挂了，AsyncWriter 会卡在那里死循环重试，直到数据库恢复。
+   * 结果：保证了内存的变更最终一定会同步到数据库。
+### 4.5 用 Redis 能做到跟我们原子账本一样的功能吗？ / Can Redis do the same thing as our atomic ledger?
+Redis 确实有 Incr 和 Lua 脚本 可以实现原子加减。但有 3 个致命伤：
+1. 持久化不可靠 (Durability)
+ * Redis AOF：
+   * everysec (默认)：每秒刷盘。如果 Redis 宕机，你会丢失最后一秒的所有账变数据。对于百万 TPS 的系统，这意味着可能丢失几十万笔交易。这是金融系统的噩梦。
+   * always：每次操作都刷盘。性能太差，Redis 的吞吐量会急剧下降。性能会暴跌到几百 TPS，比 MySQL 还慢，失去了用 Redis 的意义。
+ * j-atomic-ledger WAL: 
+2. 性能瓶颈在网络 (Performance)
+ * Redis：每一次账变都是一次 网络往返（RTT）。即使在内网，延迟也在 0.5ms 左右。TPS 上限被网络卡死。
+ * j-atomic-ledger：纯内存 long 加法，耗时几纳秒。
+3. 业务逻辑受限 (Flexibility)
+ * Redis：复杂的业务逻辑（如检查多种冻结状态、风控规则）必须写在 Lua 脚本 里，开发、测试、调试都极其痛苦。
+ * j-atomic-ledger：直接用 Java 写，可以集成任何复杂的业务校验逻辑。
+### 4.6 Redis 的 AOF + RDB 与 j-atomic-ledger 的 WAL + Snapshot 有什么区别？ / What's the difference between Redis's AOF + RDB and j-atomic-ledger's WAL + Snapshot?
+1. 相同点：  
+  Redis 的 RDB + AOF 和 j-atomic-ledger 的 Snapshot + WAL 都是为了解决数据持久化和快速恢复的问题。两者在目标上是一致的。
+2. 不同点：
+   1. 日志系统: AOF vs WAL (Chronicle Queue)：
+      * Redis AOF (Append-Only File)：
+        * 记录内容：记录的是命令文本，例如 INCR mykey。
+        * 写入时机：
+          * always: 每条命令都同步 fsync 刷盘。极安全，但极慢（几百 TPS），会阻塞 Redis 主线程。
+          * everysec (默认): 每秒异步 fsync 一次。性能好，但有风险。如果 Redis 宕机，会丢失最后一秒的数据。
+          * no: 完全交给操作系统决定什么时候刷盘。最快，但最不安全。
+        * 恢复：重启时，像执行 SQL 脚本一样，从头到尾重新执行一遍 AOF 文件里的所有命令。
+      * j-atomic-ledger WAL (Chronicle Queue)
+        * 记录内容：记录的是二进制的 Command 对象（如 TradeCommand）。
+        * 写入时机：
+          * 每次都写，同步执行。
+          * 使用内存映射文件 (MappedByteBuffer)。代码层面是“同步写”，但实际上只是写到了操作系统的 Page Cache（内存的一部分）。
+          * 性能：几乎等同于写内存，耗时几十纳秒，完全不阻塞业务。
+          * 安全性：即使 Java 进程崩溃，只要操作系统没崩（没断电），OS 会负责把 Page Cache 里的脏数据刷入磁盘。可靠性远高于 everysec。
+          * 对比：达到了 AOF always 的安全性，但拥有 no 的性能。
+   2. 快照系统：RDB vs Kryo Snapshot
+      * Redis RDB (Redis Database)
+        * 记录内容：某一时刻 Redis 内存中所有数据的二进制快照。
+        * 生成方式：
+          * Redis 会 fork() 一个子进程。
+          * 子进程负责遍历内存，将数据写入一个临时的 RDB 文件。
+          * 写完后，原子替换旧的 RDB 文件。
+        * 优点：
+          * 不阻塞主进程（由子进程干活）。
+          * 恢复速度快（直接加载二进制文件，比重放 AOF 快得多）。
+        * 缺点：
+          * fork() 开销：在内存占用巨大时（几十 GB），fork 可能会导致 Redis 服务短暂卡顿（ms级）。
+          * 数据丢失：RDB 是定时保存的（例如 save 60 1000，60秒内有1000次修改就保存）。如果两次快照之间宕机，会丢失大量数据。
+      * j-atomic-ledger Kryo Snapshot
+        * 记录内容：某一时刻 LedgerPartition 内存中该分片数据的二进制快照。
+        * 生成方式：
+          * 在 Disruptor 消费者线程 中，同步执行。 
+          * 先写入临时文件，再原子重命名。
+        * 优点：
+          * 数据精准：快照与 WAL 的 Index 是严格对应的，恢复时无缝衔接。 
+          * 原子写入：保证快照文件要么是完整的，要么不存在，绝不会损坏。
+        * 缺点：
+          * 同步阻塞：保存快照时，会短暂阻塞 Disruptor 消费者线程（几十到几百毫秒）。
+          * 应对：但因为是定期执行（比如每 5万条或每10分钟），且只在批次末尾或心跳时执行，这种短暂的暂停对整体 TPS 影响很小。
+   3. 恢复机制：
+      * Redis (通常 AOF + RDB 混合)
+        * 启动：先找 RDB 文件。
+        * 加载 RDB：快速恢复到快照时刻的状态。
+        * 重放 AOF：再读取 RDB 保存之后产生的增量 AOF 日志，追平数据。
+      * j-atomic-ledger (WAL + Kryo Snapshot 混合)
+        * 启动：先找 Snapshot 文件。
+        * 加载 Snapshot：恢复到快照时刻的状态。
+        * 重放 WAL：读取快照 Index 之后的增量 WAL 日志。
 ## 📄 License
 
 j-atomic-ledger is Open Source software released under the Apache 2.0 license.

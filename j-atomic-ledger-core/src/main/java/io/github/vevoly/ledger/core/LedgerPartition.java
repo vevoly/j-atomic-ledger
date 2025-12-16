@@ -6,6 +6,10 @@ import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import io.github.vevoly.ledger.api.LedgerCommand;
+import io.github.vevoly.ledger.api.exception.DuplicateCommandException;
+import io.github.vevoly.ledger.api.exception.InitializationException;
+import io.github.vevoly.ledger.api.exception.RecoveryException;
+import io.github.vevoly.ledger.core.metrics.LedgerMetricManager;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
 import io.github.vevoly.ledger.api.BusinessProcessor;
@@ -17,7 +21,6 @@ import io.github.vevoly.ledger.core.sync.AsyncWriter;
 import io.github.vevoly.ledger.core.wal.WalManager;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import io.github.vevoly.ledger.core.metrics.LedgerMetricConstants;
 import net.openhft.chronicle.queue.ExcerptTailer;
 
 import java.io.File;
@@ -27,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  * <h3>核心账本分片引擎 (Core Ledger Partition)</h3>
@@ -61,6 +65,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
     // --- 运行时状态 (Runtime State) ---
     @Getter
     private S state; // 内存中的核心状态对象 / Core state object in memory
+    private final Supplier<S> stateSupplier; // 懒加载 state / Lazy load state
     private IdempotencyStrategy idempotencyStrategy;
     private final AtomicLong lastWalIndex = new AtomicLong(0); // 当前处理到的 WAL 索引 / Current WAL index being processed
     private final Class<C> commandClass; // 用于反序列化 / Used for deserialization
@@ -79,6 +84,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
 
     // --- 监控 (Metrics) ---
     private final MeterRegistry registry;
+    private final LedgerMetricManager metricManager;
     private final Tags tags;
 
     // --- 心跳 (Heartbeat) ---
@@ -94,11 +100,11 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      * 构造函数 (Constructor).
      * <p>仅供 LedgerEngine 调用。</p>
      */
-    LedgerPartition(int partitionIndex, String partitionName, LedgerEngine.Builder<S, C, E> builder) {
+    LedgerPartition(int partitionIndex, String partitionName, LedgerEngine.Builder<S, C, E> builder, LedgerMetricManager metricManager) {
         this.partitionIndex = partitionIndex;
         this.partitionName = partitionName;
         this.processor = builder.getProcessor();
-        this.state = builder.getInitialState();
+        this.stateSupplier = builder.getInitialStateSupplier();
         this.snapshotInterval = builder.getSnapshotInterval();
         this.enableTimeSnapshot = builder.isEnableTimeSnapshot();
         this.snapshotTimeIntervalMs = builder.getSnapshotTimeIntervalMs();
@@ -115,12 +121,13 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
                 new GuavaIdempotencyStrategy();
         // 4. 初始化 Metrics / initialize Metrics
         this.registry = builder.getRegistry();
+        this.metricManager = metricManager;
         this.tags = Tags.of(
-                LedgerMetricConstants.TAG_ENGINE, builder.getEngineName(),
-                LedgerMetricConstants.TAG_PARTITION, partitionName
+                LedgerMetricManager.TAG_ENGINE, builder.getEngineName(),
+                LedgerMetricManager.TAG_PARTITION, partitionName
         );
         // 5. 初始化异步写入器 / initialize async writer
-        this.asyncWriter = new AsyncWriter<>(builder.getQueueSize(), builder.getBatchSize(), builder.getSyncer(), registry, tags);
+        this.asyncWriter = new AsyncWriter<>(builder.getQueueSize(), builder.getBatchSize(), builder.getSyncer(), registry, metricManager, tags);
     }
 
     /**
@@ -131,11 +138,16 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      *     <li>启动 Disruptor (Start Disruptor).</li>
      * </ol>
      */
-    public synchronized void start() {
+    public synchronized void start() throws InitializationException {
         log.info(">>> 分片 [{}] 正在启动...", partitionName);
 
-        // 1. 执行恢复 (加载快照 + 重放 WAL) / Recover (load snapshot + replay WAL)
-        recover();
+        try {
+            // 1. 执行恢复 (加载快照 + 重放 WAL) / Recover (load snapshot + replay WAL)
+            recover();
+        } catch (RecoveryException e) {
+            log.error("分片 [{}] 数据恢复失败，启动终止！请检查 WAL 或快照文件是否损坏。", partitionName, e);
+            throw new InitializationException("Partition " + partitionName + " failed to recover.", e);
+        }
 
         // 2. 启动异步落库线程 / Start AsyncWriter
         this.asyncWriter.start();
@@ -154,7 +166,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
         );
 
         // 注册 RingBuffer 监控，监控剩余容量，越小越危险 / register RingBuffer monitoring, the smaller the more dangerous
-        registry.gauge(LedgerMetricConstants.METRIC_RING_REMAINING, tags,
+        registry.gauge(metricManager.ringRemaining, tags,
                 disruptor, d -> d.getRingBuffer().remainingCapacity());
 
         // 绑定内部处理器 / bind internal handler
@@ -179,54 +191,62 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
      * <p>加载快照 -> 定位 WAL -> 重放增量日志。</p>
      */
     @SuppressWarnings("unchecked")
-    private void recover() {
+    private void recover() throws RecoveryException {
         log.info("分片 [{}] 开始执行数据恢复...", partitionName);
-        // 1. 加载快照 / load snapshot
-        SnapshotContainer<S> snapshot = snapshotManager.load();
-        if (snapshot != null) {
-            this.state = snapshot.getState();
-            this.idempotencyStrategy = snapshot.getIdempotencyStrategy();
-            this.lastWalIndex.set(snapshot.getLastWalIndex());
-            log.info("分片 [{}] 已加载快照，Snapshot Index: {}", partitionName, lastWalIndex.get());
-        } else {
-            log.info("分片 [{}] 未发现快照，将从头开始重放 WAL。", partitionName);
-        }
-        // 2. 准备 WAL 读取器 / prepare WAL reader
-        ExcerptTailer tailer = walManager.createTailer();
-        // 只要有快照，就尝试定位到快照点 / try to locate to snapshot point
-        if (snapshot != null) {
-            boolean found = tailer.moveToIndex(snapshot.getLastWalIndex());
-            if (found) {
-                // 读取并跳过快照点那一条日志 / read and skip snapshot point log
-                tailer.readDocument(r -> {});
+        try {
+            // 1. 加载快照 / load snapshot
+            SnapshotContainer<S> snapshot = snapshotManager.load();
+            if (snapshot != null) {
+                // A. 热启动：有快照，直接用快照的数据
+                this.state = snapshot.getState();
+                this.idempotencyStrategy = snapshot.getIdempotencyStrategy();
+                this.lastWalIndex.set(snapshot.getLastWalIndex());
+                log.info("分片 [{}] 已加载快照，Snapshot Index: {}", partitionName, lastWalIndex.get());
             } else {
-                log.warn("分片 [{}] 警告：快照记录的 Index {} 在 WAL 中未找到，可能日志已被清理。尝试从头读取...", partitionName, snapshot.getLastWalIndex());
+                // B. 冷启动：没快照，这时候才去调用数据库！
+                log.info("分片 [{}] 未发现快照，正在从数据库/初始化配置加载初始状态 (Lazy Load)...", partitionName);
+                // 懒加载触发点
+                this.state = stateSupplier.get();
+            }
+            // 2. 准备 WAL 读取器 / prepare WAL reader
+            ExcerptTailer tailer = walManager.createTailer();
+            // 只要有快照，就尝试定位到快照点 / try to locate to snapshot point
+            if (snapshot != null) {
+                boolean found = tailer.moveToIndex(snapshot.getLastWalIndex());
+                if (found) {
+                    // 读取并跳过快照点那一条日志 / read and skip snapshot point log
+                    tailer.readDocument(r -> {});
+                } else {
+                    log.warn("分片 [{}] 警告：快照记录的 Index {} 在 WAL 中未找到，可能日志已被清理。尝试从头读取...", partitionName, snapshot.getLastWalIndex());
+                    tailer.toStart();
+                }
+            } else {
                 tailer.toStart();
             }
-        } else {
-            tailer.toStart();
+            // 3. 重放增量日志 / replay WAL
+            long count = 0;
+            long startTime = System.currentTimeMillis();
+            while (true) {
+                // 读取日志中的 Command 对象 / read Command object from log
+                boolean read = tailer.readDocument(r -> {
+                    // 这里读取 "data" 字段，反序列化为对象 / read "data" field and deserialize to object
+                    C cmd = r.read("data").object(commandClass);
+                    if (cmd != null) {
+                        processCommand(cmd, true);
+                    }
+                });
+                if (!read) break;
+                count++;
+            }
+            // 更新内存中的 index 记录，确保新来的请求接着写 / update memory index record to ensure new requests continue to write
+            if (tailer.index() > this.lastWalIndex.get()) {
+                this.lastWalIndex.set(tailer.index());
+            }
+            long cost = System.currentTimeMillis() - startTime;
+            log.info("分片 [{}] 增量恢复完成。耗时: {}ms, 重放条数: {}", partitionName, cost, count);
+        } catch (Exception e) {
+            throw new RecoveryException("Failed to recover partition " + partitionName, e);
         }
-        // 3. 重放增量日志 / replay WAL
-        long count = 0;
-        long startTime = System.currentTimeMillis();
-        while (true) {
-            // 读取日志中的 Command 对象 / read Command object from log
-            boolean read = tailer.readDocument(r -> {
-                // 这里读取 "data" 字段，反序列化为对象 / read "data" field and deserialize to object
-                C cmd = r.read("data").object(commandClass);
-                if (cmd != null) {
-                    processCommand(cmd, true);
-                }
-            });
-            if (!read) break;
-            count++;
-        }
-        // 更新内存中的 index 记录，确保新来的请求接着写 / update memory index record to ensure new requests continue to write
-        if (tailer.index() > this.lastWalIndex.get()) {
-            this.lastWalIndex.set(tailer.index());
-        }
-        long cost = System.currentTimeMillis() - startTime;
-        log.info("分片 [{}] 增量恢复完成。耗时: {}ms, 重放条数: {}", partitionName, cost, count);
     }
 
     /**
@@ -318,7 +338,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
             // 如果已处理，直接跳过 / if already processed, skip
             log.debug("Command already processed: {}", txId);
             if (future != null) {
-                future.completeExceptionally(new RuntimeException("Duplicate request: " + txId));
+                future.completeExceptionally(new DuplicateCommandException("Duplicate request: " + txId));
             }
             return;
         }

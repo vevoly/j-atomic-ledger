@@ -5,6 +5,7 @@ import io.github.vevoly.example.wallet.domain.TradeCommand;
 import io.github.vevoly.example.wallet.domain.TradeResult;
 import io.github.vevoly.example.wallet.domain.WalletState;
 import io.github.vevoly.example.wallet.entity.UserWalletEntity;
+import io.github.vevoly.ledger.api.exception.JAtomicLedgerException;
 import io.github.vevoly.ledger.api.utils.MoneyUtils;
 import io.github.vevoly.ledger.core.LedgerEngine;
 import lombok.extern.slf4j.Slf4j;
@@ -75,7 +76,7 @@ public class BenchController {
     @GetMapping("/bench")
     public String benchmark(@RequestParam(value = "count", defaultValue = "1000000") int count,
                             @RequestParam(value = "threads", defaultValue = "50") int threads,
-                            @RequestParam(value = "users", defaultValue = "16") int userCount) {
+                            @RequestParam(value = "users", defaultValue = "16") int userCount) throws JAtomicLedgerException {
 
         // 0. 准备工作：统计期初余额、预计算金额 / Preparation: Calc initial balance & amount
         final long startBalanceSnapshot = calculateTotalBalance(userCount);
@@ -131,7 +132,11 @@ public class BenchController {
                             completedCount.increment();
                             // 检查是否全部完成 / Check if finished
                             if (completedCount.sum() == count) {
-                                printResult("标准模式 / Standard mode", startTime, count, userCount, startBalanceSnapshot, amountLong);
+                                try {
+                                    printResult("标准模式 / Standard mode", startTime, count, userCount, startBalanceSnapshot, amountLong);
+                                } catch (JAtomicLedgerException e) {
+                                    throw new RuntimeException(e);
+                                }
                             }
                         });
 
@@ -165,7 +170,7 @@ public class BenchController {
     @GetMapping("/bench-fast")
     public String benchThroughput(@RequestParam(value = "count", defaultValue = "1000000") int count,
                                   @RequestParam(value = "threads", defaultValue = "50") int threads,
-                                  @RequestParam(value = "users", defaultValue = "16") int userCount) {
+                                  @RequestParam(value = "users", defaultValue = "16") int userCount) throws JAtomicLedgerException {
 
         // 0. 准备工作 / Preparation
         final long startBalanceSnapshot = calculateTotalBalance(userCount);
@@ -217,7 +222,11 @@ public class BenchController {
                 long current = monitor.getCount();
                 if (current >= count) {
                     // 打印结果并校验资金 (即使是极速模式，钱也不能错) / Print result and verify balance
-                    printResult("极速模式 / Fire-and-Forget", monitor.getStartTime(), count, userCount, startBalanceSnapshot, amountLong);
+                    try {
+                        printResult("极速模式 / Fire-and-Forget", monitor.getStartTime(), count, userCount, startBalanceSnapshot, amountLong);
+                    } catch (JAtomicLedgerException e) {
+                        throw new RuntimeException(e);
+                    }
                     break;
                 }
                 try { Thread.sleep(10); } catch (InterruptedException e) {}
@@ -231,7 +240,7 @@ public class BenchController {
      * 辅助方法：统计所有用户的总余额.
      * <br><span style="color: gray;">Helper: Calculate total balance of all users.</span>
      */
-    private long calculateTotalBalance(int userCount) {
+    private long calculateTotalBalance(int userCount) throws JAtomicLedgerException {
         long total = 0;
         for (long uid = 0; uid < userCount; uid++) {
             // 直接读取内存状态，无 IO 损耗 / Direct memory access, no I/O cost
@@ -245,7 +254,7 @@ public class BenchController {
      * 辅助方法：打印压测报告与资金对账.
      * <br><span style="color: gray;">Helper: Print report and verify funds.</span>
      */
-    private void printResult(String mode, long startTime, int count, int userCount, long startBalance, long amountPerTrade) {
+    private void printResult(String mode, long startTime, int count, int userCount, long startBalance, long amountPerTrade) throws JAtomicLedgerException {
         long endTime = System.currentTimeMillis();
         long cost = endTime - startTime;
         long safeCost = cost == 0 ? 1 : cost;

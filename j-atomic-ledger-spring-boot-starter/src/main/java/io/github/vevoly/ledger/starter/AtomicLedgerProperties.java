@@ -93,4 +93,11 @@ public class AtomicLedgerProperties {
      */
     private IdempotencyType idempotency = IdempotencyType.BLOOM;
 
+    /**
+     * 监控指标的前缀 (Metrics Prefix).
+     * <p>默认为 "j-atomic-ledger."</p>
+     * <span style="color: gray;">Metrics prefix. Default: "j-atomic-ledger.".</span>
+     */
+    private String metricsPrefix = "j-atomic-ledger.";
+
 }
