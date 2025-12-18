@@ -2,6 +2,7 @@ package io.github.vevoly.ledger.api;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
 import net.openhft.chronicle.bytes.BytesIn;
 import net.openhft.chronicle.bytes.BytesMarshallable;
 import net.openhft.chronicle.bytes.BytesOut;
@@ -45,6 +46,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @Data
 @EqualsAndHashCode
+@NoArgsConstructor
 public abstract class BaseLedgerCommand implements LedgerCommand, BytesMarshallable {
 
     @Serial

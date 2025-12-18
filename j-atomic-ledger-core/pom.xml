@@ -19,7 +19,6 @@
         <dependency>
             <groupId>io.github.vevoly</groupId>
             <artifactId>j-atomic-ledger-api</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- 2. 核心技术栈 -->
@@ -54,6 +53,11 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
         </dependency>
     </dependencies>
 </project>

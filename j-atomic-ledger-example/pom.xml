@@ -23,7 +23,6 @@
         <dependency>
             <groupId>io.github.vevoly</groupId>
             <artifactId>j-atomic-ledger-spring-boot-starter</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- Spring Web -->

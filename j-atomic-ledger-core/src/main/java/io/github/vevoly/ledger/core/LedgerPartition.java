@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -213,10 +214,7 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
             // 只要有快照，就尝试定位到快照点 / try to locate to snapshot point
             if (snapshot != null) {
                 boolean found = tailer.moveToIndex(snapshot.getLastWalIndex());
-                if (found) {
-                    // 读取并跳过快照点那一条日志 / read and skip snapshot point log
-                    tailer.readDocument(r -> {});
-                } else {
+                if (!found){
                     log.warn("分片 [{}] 警告：快照记录的 Index {} 在 WAL 中未找到，可能日志已被清理。尝试从头读取...", partitionName, snapshot.getLastWalIndex());
                     tailer.toStart();
                 }
@@ -227,15 +225,25 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
             long count = 0;
             long startTime = System.currentTimeMillis();
             while (true) {
+                final AtomicBoolean documentRead = new AtomicBoolean(false);
+                final AtomicBoolean readSuccess = new AtomicBoolean(false);
                 // 读取日志中的 Command 对象 / read Command object from log
-                boolean read = tailer.readDocument(r -> {
+                boolean found = tailer.readDocument(r -> {
+                    documentRead.set(true);
                     // 这里读取 "data" 字段，反序列化为对象 / read "data" field and deserialize to object
                     C cmd = r.read("data").object(commandClass);
                     if (cmd != null) {
                         processCommand(cmd, true);
+                        readSuccess.set(true);
                     }
                 });
-                if (!read) break;
+                if (!found && !documentRead.get()){
+                    break;
+                }
+                // 如果执行了 lambda 但解析失败 (比如 cmd is null)，这里可以加日志
+                if (documentRead.get() && !readSuccess.get()) {
+                    log.warn("分片 [{}] 在 Index {} 读到空命令，已跳过。", partitionName, tailer.index());
+                }
                 count++;
             }
             // 更新内存中的 index 记录，确保新来的请求接着写 / update memory index record to ensure new requests continue to write

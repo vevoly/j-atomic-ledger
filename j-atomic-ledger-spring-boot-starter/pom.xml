@@ -20,7 +20,6 @@
         <dependency>
             <groupId>io.github.vevoly</groupId>
             <artifactId>j-atomic-ledger-core</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- Spring Boot 自动配置核心库 -->

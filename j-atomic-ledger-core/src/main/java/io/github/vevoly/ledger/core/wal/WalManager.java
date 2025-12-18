@@ -1,9 +1,11 @@
 package io.github.vevoly.ledger.core.wal;
 
+import net.openhft.chronicle.bytes.BytesMarshallable;
 import net.openhft.chronicle.queue.ExcerptAppender;
 import net.openhft.chronicle.queue.ExcerptTailer;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueue;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueueBuilder;
+import net.openhft.chronicle.wire.WriteMarshallable;
 
 import java.io.Closeable;
 import java.io.File;
@@ -29,8 +31,11 @@ import java.io.File;
  */
 public class WalManager implements Closeable {
 
-    private final SingleChronicleQueue queue;
-    private final ExcerptAppender appender;
+    private SingleChronicleQueue queue;
+
+    // 为每个线程创建一个 appender，避免多线程写入时出现竞争条件。
+    // Create an appender for each thread to avoid race conditions when multiple threads write.
+    private final ThreadLocal<ExcerptAppender> threadLocalAppender = ThreadLocal.withInitial(() -> queue.acquireAppender());
 
     /**
      * 构造函数 (Constructor).
@@ -38,10 +43,8 @@ public class WalManager implements Closeable {
      * @param dataDir 数据存储根目录 (Parent directory for data storage). e.g. /data/ledger/core-p0
      */
     public WalManager(String dataDir) {
-        // 创建持久化队列
         File walDir = new File(dataDir, "wal");
         this.queue = SingleChronicleQueueBuilder.binary(walDir).build();
-        this.appender = queue.acquireAppender();
     }
 
     /**
@@ -62,9 +65,11 @@ public class WalManager implements Closeable {
      * @return 写入后的索引 (Index after writing)
      */
     public long write(Object command) {
-        // 使用 Chronicle Wire 格式写入对象，Chronicle 会自动检测是否实现了 BytesMarshallable，如果是，速度提升 10 倍
-        // Use Chronicle Wire to write objects, Chronicle automatically detects whether BytesMarshallable is implemented, if so, speed is improved by 10x.
+        // 1. 从 ThreadLocal 获取本线程专属的 Appender / Get the thread-local Appender for this thread
+        ExcerptAppender appender = threadLocalAppender.get();
+        // 2. 写入 / Write
         appender.writeDocument(w -> w.write("data").object(command.getClass(), command));
+        // 3. 返回索引 / Return index
         return appender.lastIndexAppended();
     }
 

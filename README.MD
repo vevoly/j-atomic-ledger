@@ -263,6 +263,8 @@ public void trade(long uid, long amount) {
     engine.submit(cmd);
 }
 ```
+### 2.5 使用 WAL 日志查看器和快照查看器 / Use WAL Log Viewer and Snapshot Viewer
+
 ---
 ## 📖 3. 使用指南 / User Guide
 ### 3.1 开发规范与用户契约 / Development Contracts and User Contract
