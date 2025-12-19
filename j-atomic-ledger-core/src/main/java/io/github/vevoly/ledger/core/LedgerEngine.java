@@ -1,13 +1,12 @@
 package io.github.vevoly.ledger.core;
 
-import io.github.vevoly.ledger.api.BatchWriter;
-import io.github.vevoly.ledger.api.BusinessProcessor;
-import io.github.vevoly.ledger.api.IdempotencyStrategy;
-import io.github.vevoly.ledger.api.LedgerCommand;
+import io.github.vevoly.ledger.api.*;
 import io.github.vevoly.ledger.api.exception.InitializationException;
 import io.github.vevoly.ledger.api.exception.JAtomicLedgerErrorCode;
 import io.github.vevoly.ledger.api.exception.JAtomicLedgerException;
 import io.github.vevoly.ledger.core.metrics.LedgerMetricManager;
+import io.github.vevoly.ledger.core.routing.ModuloStrategy;
+import io.github.vevoly.ledger.core.routing.RendezvousHashStrategy;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -73,6 +72,24 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
     private final LedgerMetricManager metricManager;
 
     /**
+     * 路由策略.
+     * <br><span style="color: gray;">Routing strategy </span>
+     */
+    private final RoutingStrategy routingStrategy;
+
+    /**
+     * 集群总节点数
+     * <br><span style="color: gray;">Total number of nodes in the cluster</span>
+     */
+    private final int totalNodes;
+
+    /**
+     * 集群当前节点 id
+     * <br><span style="color: gray;">Current node id </span>
+     */
+    private final int currentNodeId;
+
+    /**
      * 私有构造函数 (Private Constructor).
      * <p>强制使用 Builder 创建，在此处初始化所有分片。</p>
      */
@@ -80,12 +97,26 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         this.metricManager = metricManager;
         this.engineName = builder.engineName;
         this.partitionCount = builder.partitionCount;
+        this.routingStrategy = builder.routingStrategy;
         // 校验分片数 / Validate partition count
         if (this.partitionCount <= 0) {
             throw new InitializationException("Partition count must be greater than 0.");
         }
         this.partitions = new ArrayList<>(partitionCount);
-        log.info("正在初始化引擎 [{}], 分片数: {}", engineName, partitionCount);
+        this.totalNodes = builder.getTotalNodes();
+        this.currentNodeId = builder.getNodeId();
+        log.info("正在初始化引擎 [{}], 分片数: {}, 去重策略: {}, 路由策略: {}", engineName, partitionCount, builder.getIdempotencyStrategy().getName(), routingStrategy.getName());
+        if (totalNodes > 1) {
+            log.info("引擎 [{}] 运行在集群模式下。总节点: {}, 当前节点ID: {}", engineName, totalNodes, currentNodeId);
+            if (!(routingStrategy instanceof RendezvousHashStrategy)) {
+                log.info("\n\n" +
+                        "********************************************************************************\n" +
+                        "  [j-atomic-ledger] 警告: 集群模式下请使用 RENDEZVOUS 策略，否则扩容时会导致大量数据迁移！\n" +
+                        "  It is STRONGLY RECOMMENDED to switch to RENDEZVOUS for production clusters.    \n" +
+                        "  Otherwise, a large amount of data migration will occur during expansion.        \n" +
+                        "********************************************************************************\n");
+            }
+        }
 
         // 初始化所有分片 / Initialize all partitions
         for (int i = 0; i < partitionCount; i++) {
@@ -127,9 +158,17 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
     public void submit(C command) throws JAtomicLedgerException {
         // 1. 获取路由键 (例如 userId) / Get routing key (e.g. userId)
         String routingKey = command.getRoutingKey();
-        // 2. 计算哈希槽 / Calculate hash slot
+        // 2. 集群层路由校验 / Cluster layer routing self-check
+        if (totalNodes > 1) {
+            int targetNodeId = routingStrategy.getPartition(routingKey, totalNodes);
+            if (targetNodeId != this.currentNodeId) {
+                throw new JAtomicLedgerException(JAtomicLedgerErrorCode.ROUTING_ERROR,
+                        String.format("路由错误！请求 [%s] 应发往节点 [%d]，但当前是节点 [%d]。", routingKey, targetNodeId, this.currentNodeId));
+            }
+        }
+        // 3. 节点内分片路由 / Partition-level Routing
         int index = getPartitionIndex(routingKey);;
-        // 3. 转发给具体的分片 / Dispatch to specific partition
+        // 转发给具体的分片 / Dispatch to specific partition
         partitions.get(index).submit(command);
     }
 
@@ -180,10 +219,7 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         if (routingKey == null) {
             throw new JAtomicLedgerException(JAtomicLedgerErrorCode.INVALID_ARGUMENT, "Routing key cannot be null");
         }
-        // 使用位运算保证正数，效率比 Math.abs 高，且能处理 Integer.MIN_VALUE 的边界情况
-        // Use bitwise operation to ensure positive number, efficiency is higher than Math.abs, and can handle the boundary case of Integer.MIN_VALUE
-        int hash = routingKey.hashCode();
-        return (hash & Integer.MAX_VALUE) % partitionCount;
+        return routingStrategy.getPartition(routingKey, partitions.size());
     }
 
     /**
@@ -212,6 +248,9 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         private BatchWriter<E> syncer;
         private IdempotencyStrategy idempotencyStrategy;
         private Class<C> commandClass;
+        private RoutingStrategy routingStrategy = new ModuloStrategy();
+        private int totalNodes = 1; // 集群总节点数 / Total number of nodes in the cluster
+        private int nodeId = 0;  // 当前节点ID / Current node ID
 
         public Builder<S, C, E> baseDir(String dir) {
             this.baseDir = dir;
@@ -271,6 +310,19 @@ public class LedgerEngine<S extends Serializable, C extends LedgerCommand, E ext
         }
         public Builder<S, C, E> commandClass(Class<C> commandClass) {
             this.commandClass = commandClass;
+            return this;
+        }
+        public Builder<S, C, E> routing(RoutingStrategy strategy) {
+            this.routingStrategy = strategy;
+            return this;
+        }
+        public Builder<S, C, E> cluster(int totalNodes, int nodeId) {
+            if (totalNodes < 1) throw new IllegalArgumentException("Total nodes must be at least 1.");
+            if (nodeId < 0 || nodeId >= totalNodes) {
+                throw new IllegalArgumentException("Node ID must be between 0 and " + (totalNodes - 1));
+            }
+            this.totalNodes = totalNodes;
+            this.nodeId = nodeId;
             return this;
         }
 

@@ -92,4 +92,9 @@ public class GuavaIdempotencyStrategy implements IdempotencyStrategy {
         filter.put(key);
     }
 
+    @Override
+    public String getName() {
+        return IdempotencyType.BLOOM.name();
+    }
+
 }

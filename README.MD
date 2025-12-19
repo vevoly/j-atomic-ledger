@@ -1,14 +1,13 @@
 # j-atomic-ledger
 #### 作者 Author：VEVOLY
-> **一款基于 LMAX 架构的 Java 高性能内存交易引擎，单机百万 TPS，支持 WAL 持久化与秒级崩溃恢复。**  
-> A Java high-performance memory transaction engine based on the LMAX architecture, single machine million TPS, supports WAL persistence and second-level crash recovery.
+> **基于 LMAX 架构的 Java 高性能内存交易引擎，单机百万 TPS，支持 WAL 持久化与秒级崩溃恢复，可集群部署。**  
+> A Java high-performance memory transaction engine based on the LMAX architecture, single machine million TPS, supports WAL persistence and second-level crash recovery. support Cluster deployment.
 ---
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![JDK](https://img.shields.io/badge/JDK-17%2B-green.svg)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg)]()
 ---
 ![img.png](img%2Fimg.png)
-> **Benchmark Note / 压测说明**:
 > 此次测试是在 Mac M1 芯片只有4核的环境下跑出，单核跑出10万TPS。若是16核服务器，轻松上百万TPS。  
 > This test is run on a Mac M1 chip with only 4 cores, achieving 100,000 TPS. If it is a 16-core server, it can easily reach millions of TPS.
 ---
@@ -16,26 +15,21 @@
 ## 📖 1. Introduction / 项目简介
 
 ### 1.1 项目概述 🇨🇳
-**j-atomic-ledger** 是一个专为 **高并发（High Concurrency）** 和 **低延迟（Low Latency）** 场景设计的通用内存交易引擎。
-
-在传统的金融/电商架构中，数据库行锁（Row Lock）往往是制约吞吐量的最大瓶颈。**j-atomic-ledger** 采用 **内存事件溯源（In-Memory Event Sourcing）** 架构，将核心计算从数据库移至内存，通过 **Disruptor** 实现单线程无锁处理，利用 **Chronicle Queue** 实现纳秒级 WAL 持久化，配合 **Kryo** 内存快照技术，实现了**单机百万级 TPS** 的处理能力，同时保证了数据的绝对安全与强一致性。
-
+**j-atomic-ledger** 是专为 **高并发（High Concurrency）** 和 **低延迟（Low Latency）** 场景设计的通用内存交易引擎。
+在传统的金融/电商架构中，数据库行锁（Row Lock）往往是制约吞吐量的最大瓶颈。**j-atomic-ledger** 采用 **内存事件溯源（In-Memory Event Sourcing）** 架构，
+将核心计算从数据库移至内存，通过 **Disruptor** 实现单线程无锁处理，利用 **Chronicle Queue** 实现纳秒级 WAL 持久化，配合 **Kryo** 内存快照技术，
+实现了**单机百万级 TPS** 的处理能力，同时保证了数据的绝对安全与强一致性。  
 它并不是要取代数据库，而是作为数据库的前置高性能**写缓冲与计算核心**，特别适用于**支付结算、订单撮合、秒杀库存扣减、账变**等对并发要求极高的场景。
-
-### Overview 🇺🇸
-**j-atomic-ledger** is a generic in-memory transaction engine designed for **High Concurrency** and **Low Latency** scenarios.
-
-In traditional financial/e-commerce architectures, database row locks are often the biggest bottleneck limiting throughput. **j-atomic-ledger** adopts the **In-Memory Event Sourcing** architecture. It moves core calculations from the database to memory, achieving **Single-Node Million-Level TPS** via **Disruptor** (lock-free processing), **Chronicle Queue** (nanosecond-level WAL persistence), and **Kryo** (fast memory snapshot). It ensures absolute data safety and strong consistency.
-
+### Project Overview 🇺🇸
+**j-atomic-ledger** is a generic in-memory transaction engine designed for **High Concurrency** and **Low Latency** scenarios.  
+In traditional financial/e-commerce architectures, database row locks are often the biggest bottleneck limiting throughput. **j-atomic-ledger** adopts the **In-Memory Event Sourcing** architecture. It moves core calculations from the database to memory, achieving **Single-Node Million-Level TPS** via **Disruptor** (lock-free processing), **Chronicle Queue** (nanosecond-level WAL persistence), and **Kryo** (fast memory snapshot). It ensures absolute data safety and strong consistency.  
 It is not intended to replace the database but serves as a high-performance **Write Buffer & Computation Core** in front of it. It is ideal for scenarios such as **Payment Settlement, Order Matching, Flash Sales (Seckill), and Ledger Systems**.
-
 
 ### 1.2 解决问题 / Problem Solved
 #### 在传统的金融/电商架构中，**数据库行锁** 往往是制约吞吐量的最大瓶颈。当成千上万的请求同时操作同一个账户时，数据库连接池会被耗尽，导致系统瘫痪。
 #### In traditional financial/e-commerce architectures, **Database Row Locks** are often the biggest bottleneck limiting throughput. When thousands of requests hit the same account simultaneously, the database eventually becomes unresponsive.
 
 ### 1.3 核心特性 / Key Features
-
 - 🚀 **极致性能 (Extreme Performance)**: 基于 LMAX Disruptor 环形队列，单线程无锁串行执行，消除上下文切换，单机轻松突破 100万+ TPS。  
   Based on LMAX Disruptor. Lock-free, single-threaded execution eliminates context switching.
 - 📦 **内存计算 (In-Memory Computing)**: 将核心计算从数据库移至内存，利用 **Kryo** 高效序列化与 **Chronicle Queue** 高效 WAL 持久化，实现 **秒级恢复**。  
@@ -50,8 +44,11 @@ It is not intended to replace the database but serves as a high-performance **Wr
   Asynchronous batch persistence protects the backend database from traffic spikes.
 - 🔌 **开箱即用 (Easy Integration)**: 提供 Spring Boot Starter，零配置即可嵌入现有项目，接入Prometheus + Grafana。  
   Provides Spring Boot Starter. Just add dependency and config. Integrated with Prometheus + Grafana.
+- 🔗 **集群支持 (Cluster Support)**: 支持多节点集群，通过一致性哈希和负载均衡实现高可用。
+  Support multi-node cluster. Consistent hashing and load balancing for high availability.
 
 ### 1.4 项目架构 / Architecture
+#### 1.4.1 核心架构 / Core Architecture
 ```mermaid
 graph TD
     User(User Request) -->|HTTP/RPC| Gateway[Wallet Controller]
@@ -70,6 +67,45 @@ graph TD
     Handler -->|4. Push| Queue[Async Queue]
     Queue -->|5. Batch Insert| DB_Worker[Batch Writer]
     DB_Worker -->|6. Persist| MySQL[(MySQL/Oracle)]
+```
+#### 1.4.2 高可用架构 / High Availability Architecture
+```mermaid
+graph TD
+    subgraph "External World"
+        Client[Client]
+    end
+
+    subgraph "Network Layer (用户负责)"
+        Gateway[API Gateway / Nginx]
+    end
+
+    subgraph "j-atomic-ledger Cluster (3个节点)"
+        direction LR
+        Node0[LedgerEngine Node 0<br/>node-id=0, total-nodes=3]
+        Node1[LedgerEngine Node 1<br/>node-id=1, total-nodes=3]
+        Node2[LedgerEngine Node 2<br/>node-id=2, total-nodes=3]
+    end
+
+    subgraph "Internal of Node 0"
+        direction TB
+        Router0["Router (submit)"]
+        Checker0["<b style='color:red'>Self-Checker</b><br/>路由校验"]
+        Partitions0["Partitions<br>(p0, p1, p2, p3)"]
+        Router0 --> Checker0
+        Checker0 --> Partitions0
+    end
+    
+    %% 流程
+    Client -- Request->userId=100 --> Gateway
+    Gateway -- "Hash(100) % 3 = 1" --> Node1
+    Gateway -- "Hash(101) % 3 = 2" --> Node2
+    Gateway -- "Hash(102) % 3 = 0" --> Node0
+    
+    Node0 --> Router0
+    
+    %% 样式
+    classDef highlight fill:#ffcdd2,stroke:#c62828,stroke-width:2px;
+    Checker0:::highlight
 ```
 ### 1.5 架构对比 / Comparison
 
@@ -91,8 +127,8 @@ graph TD
     Game Economy: Item/Gold distribution. 
 5.  **物联网设备管理**: 设备状态变更、数据上报、事件处理。
     IoT Management: Device state changes, data reporting.
-6.  **ID生成系统**: 高效、唯一、有序的 ID 生成。
-    ID Generation: Efficient, unique, ordered IDs.
+6.  **ID生成系统**: 高并发下高效、唯一、绝对有序的 ID 生成。
+    ID Generation: Efficient, unique, absolutely ordered IDs.
 
 ---
 
@@ -103,7 +139,7 @@ graph TD
 <dependency>
     <groupId>io.github.vevoly</groupId>
     <artifactId>j-atomic-ledger-spring-boot-starter</artifactId>
-    <version>1.0.1</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 ### 2.2 配置文件 / Configuration (application.yml)
@@ -119,6 +155,10 @@ j-atomic-ledger:
   snapshot-time-interval: 10m  # 多少时间保存一次快照，支持 ms、s、m、h、d 单位 / How often to save a snapshot, supports ms, s, m, h, d units
   batch-size: 1000             # 批量落库大小 / DB batch insert size
   idempotency: BLOOM           # 去重策略：BLOOM or LRU / Idempotency strategy: BLOOM or LRU
+  routing: RENDEZVOUS          # 集群路由和节点内分片路由策略 / Cluster routing and internal sharding routing strategy
+  cluster:                     # 集群配置 / Cluster configuration
+    total-nodes: 1             # 集群节点总数 / Total number of cluster nodes
+    node-id: 0                 # 当前节点 ID / Current node ID
 ```
 
 ### 2.3 核心实现 / Core Implementation
@@ -258,7 +298,6 @@ public void trade(long uid, long amount) {
     cmd.setTxId(UUID.randomUUID().toString());
     cmd.setUserId(uid);
     cmd.setAmount(amount);
-    
     // Fire and Forget (or use setFuture for sync result)
     engine.submit(cmd);
 }
@@ -275,8 +314,9 @@ To ensure high performance and safety, users must follow these rules:
 2. **Future 必须标记为 `transient`**：防止 WAL 写入时序列化失败。
    **Mark Future as `transient`**: The `CompletableFuture` field in Command must be `transient` to avoid serialization errors during WAL writing.
 3. **Processor 禁止 I/O**：业务逻辑运行在单线程中，严禁查库或远程调用，否则吞吐量会瞬间崩塌。   
-   **No I/O in Processor**: The `process()` method runs in a single thread. **Do NOT** perform any Database/Redis/Network I/O here, or the throughput will collapse.
-
+   **No I/O in Processor**: The `process()` method runs in a single thread. **Do NOT** perform any Database/Redis/Network I/O here, or the throughput will collapse. 
+4. **集群部署必须使用和引擎内相同的路由策略**，否则引擎内集群路由校验将不会通过。集群建议使用 Rendezvous 策略，便于集群扩容。
+   **Cluster deployment must use the same routing strategy as the engine**, otherwise the cluster routing validation will fail. For clusters, it is recommended to use the Rendezvous strategy for easier scaling.
 ### 3.2 Java 17+ JVM 配置 (Chronicle) / Chronicle Configuration
 由于 Java 17+ 的模块化限制，Chronicle Queue 需要访问底层 API。本地开发工具启动需添加VM选项，生产环境启动时**必须**添加以下 JVM 参数，否则会报错或性能下降:  
 Since Java 17+, strong encapsulation requires specific JVM flags to allow Chronicle Queue to access low-level APIs (Direct Memory/Unsafe). Add these to your startup script:
@@ -306,8 +346,89 @@ High performance, low memory (10MB for 10M records). Tiny false-positive rate. B
 > * 极速模式：向 Command 传入 null。引擎跳过通知逻辑，获得物理极限吞吐量。  
     Fire-and-Forget (Extreme): Pass null as future. The engine skips notification overhead, achieving maximum TPS.
 ### 3.5 集群部署 / Cluster Deployment
-#### j-atomic-ledger 是有状态引擎 / j-atomic-ledger is a Stateful engine.
-敬请期待下个版本 / Coming soon in next version.
+#### j-atomic-ledger 是有状态引擎，正确的集群配置对于防止数据错乱至关重要。j-atomic-ledger is a Stateful engine, correct cluster configuration is crucial to prevent data corruption. 
+>⚠️ 重要提示 / Important
+集群部署时，必须配置上游负载均衡器（Nginx/Gateway）使用基于 RoutingKey 的一致性哈希策略。我们强烈推荐使用 Rendezvous Hashing (集合点哈希)。使用轮询（Round Robin）将导致数据错乱。  
+For cluster deployment, you MUST configure your upstream load balancer (Nginx/Gateway) to use a Consistent Hashing strategy based on the RoutingKey (e.g., userId). We strongly recommend using Rendezvous Hashing. Using Round Robin will lead to data corruption.
+1. 分片原则 / Sharding Principle 
+> 同一个业务实体（如 userId）的请求必须永远被路由到同一个服务节点。这是通过对 RoutingKey 进行哈希计算实现的。  
+  Requests for the same business entity (e.g., userId) must always be routed to the same service node. This is achieved by hashing the RoutingKey.
+2. 节点配置 / Configuration  (application.yml)
+> 集群中的每个节点都必须有唯一的 node-id。   
+  Each node in the cluster must have a unique node-id.
+```yaml
+# Node 0:
+j-atomic-ledger:
+  cluster:
+    total-nodes: 3  # Total nodes in the cluster
+    node-id: 0      # This is node 0
+```
+```yaml
+# Node 1:
+j-atomic-ledger:
+  cluster:
+    total-nodes: 3
+    node-id: 1
+```
+3. 路由策略 / Routing Strategy
+> * 集群路由策略和引擎内部路由策略必须一致，否则将无法通过节点校验。  
+    Cluster routing strategy and engine internal routing strategy must be consistent, otherwise node verification will fail.
+> * 目前引擎实现2种路由策略：
+>   * 集合点哈希：Rendezvous Hashing  
+      负载均衡性极佳，且在扩容/缩容时，只需迁移极少量数据，运维友好，适合集群模式。  
+      Excellent load balancing and minimal data migration on resizing. suitable for Cluster.
+>   * 取模哈希：Modulo Hashing  
+      实现简单，计算速度极快，但当节点数发生变化时，几乎所有 Key 的路由都会失效，导致数据需要全量迁移。  
+      Simple and fast, But when the number of nodes changes, almost all keys will be routed to a different partition, requiring full data migration.
+> * 用户扩展路由策略 / Extend the routing strategy  
+    通过定义一个 Spring `@Bean` 来提供自己的 `RoutingStrategy` 或 `IdempotencyStrategy` 实现。Starter 会自动检测并使用您的自定义 Bean，覆盖默认配置。  
+    You can provide your own implementation for `RoutingStrategy` or `IdempotencyStrategy` by simply defining it as a Spring `@Bean`. The starter will automatically detect and use your custom bean, overriding the default one.
+>   * 一旦使用了自定义策略，配置文件中的配置将自动失效。  
+    Once a custom strategy is used, the configuration in the configuration file will be automatically invalidated
+>   * 用法请参考 j-atomic-ledger-example 模块中的 config/CustomStrategyConfig 类。  
+    For more information, please refer to the CustomStrategyConfig class in the j-atomic-ledger-example module.
+
+4. 负载均衡器配置 / Load Balancer Configuration (Nginx/Gateway)
+> 集群的负载均衡器必须配置基于 RoutingKey 的一致性哈希策略。轮询（Round Robin）将导致数据错乱。对此作者推荐使用 Rendezvous Hashing (集合点哈希) 算法。  
+The load balancer of the cluster must be configured with a Consistent Hashing strategy based on the RoutingKey. Round Robin will lead to data corruption. We strongly recommend using Rendezvous Hashing algorithm.
+```yaml
+# nginx.conf
+http {
+    # Define upstream servers for each node
+    upstream ledger_node_0 { server 192.168.1.100:8080; }
+    upstream ledger_node_1 { server 192.168.1.101:8080; }
+    upstream ledger_node_2 { server 192.168.1.102:8080; }
+
+    server {
+        location / {
+            content_by_lua_block {
+                local chash = require "resty.chash"
+                
+                -- Get routing key from request (e.g., URL param 'userId')
+                local key = ngx.var.arg_userId
+                if not key then
+                    ngx.exit(400)
+                    return
+                end
+
+                local nodes = {"ledger_node_0", "ledger_node_1", "ledger_node_2"}
+                
+                -- Get target node using Rendezvous Hashing
+                local target_node = chash.hrw(key, nodes)
+                
+                ngx.exec("@" .. target_node)
+            }
+        }
+        
+        location @ledger_node_0 { proxy_pass http://ledger_node_0; }
+        location @ledger_node_1 { proxy_pass http://ledger_node_1; }
+        location @ledger_node_2 { proxy_pass http://ledger_node_2; }
+    }
+}
+```
+
+5. 扩容 / Scaling 
+>  敬请期待 v2.0 版本 / Coming soon in v2.0
 ### 3.6 监控
 开启 Actuator 以查看核心指标 / Enable Spring Boot Actuator to view Micrometer metrics:  
 > * j-atomic-ledger.ring.remaining: 核心风险指标，接近0说明处理不过来。  

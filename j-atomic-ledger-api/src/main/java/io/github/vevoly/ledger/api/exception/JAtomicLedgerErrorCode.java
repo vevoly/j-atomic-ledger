@@ -12,12 +12,13 @@ package io.github.vevoly.ledger.api.exception;
  * </span>
  *
  * @author vevoly
- * @since 1.0.0
+ * @since 1.0.2
  */
 public enum JAtomicLedgerErrorCode {
 
     // --- 1xxx: 初始化与配置错误 (Initialization & Configuration) ---
     INITIALIZATION_FAILED(1001, "Engine initialization failed"),
+    ROUTING_ERROR(1010, "Routing error"),
 
     // --- 2xxx: 运行时错误 (Runtime) ---
     DUPLICATE_COMMAND(2001, "Duplicate command detected"),

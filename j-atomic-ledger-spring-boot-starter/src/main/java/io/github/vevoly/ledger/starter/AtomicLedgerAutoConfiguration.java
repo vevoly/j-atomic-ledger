@@ -6,6 +6,9 @@ import io.github.vevoly.ledger.core.LedgerEngine;
 import io.github.vevoly.ledger.core.idempotency.GuavaIdempotencyStrategy;
 import io.github.vevoly.ledger.core.idempotency.IdempotencyType;
 import io.github.vevoly.ledger.core.idempotency.LruIdempotencyStrategy;
+import io.github.vevoly.ledger.core.routing.ModuloStrategy;
+import io.github.vevoly.ledger.core.routing.RendezvousHashStrategy;
+import io.github.vevoly.ledger.core.routing.RoutingType;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -46,8 +49,8 @@ public class AtomicLedgerAutoConfiguration {
      * 如果用户没有自定义 {@link IdempotencyStrategy} Bean，则根据配置文件创建默认策略。
      * </p>
      * <ul>
-     *     <li><b>LRU:</b> 适合小规模精准去重。</li>
-     *     <li><b>BLOOM (Default):</b> 适合海量数据去重。</li>
+     *     <li><b>LRU:</b> 适合小规模精准去重。/ Suitable for precise deduplication in small-scale scenarios</li>
+     *     <li><b>BLOOM (Default):</b> 适合海量数据去重。/ Suitable for massive data deduplication</li>
      * </ul>
      *
      * <hr>
@@ -56,14 +59,40 @@ public class AtomicLedgerAutoConfiguration {
      * </span>
      */
     @Bean
-    @ConditionalOnMissingBean
-    public IdempotencyStrategy idempotencyStrategy(AtomicLedgerProperties props) {
+    @ConditionalOnMissingBean(IdempotencyStrategy.class)
+    public IdempotencyStrategy defaultIdempotencyStrategy(AtomicLedgerProperties props) {
         if (props.getIdempotency() == IdempotencyType.LRU) {
             return new LruIdempotencyStrategy();
         } else {
             return new GuavaIdempotencyStrategy();
         }
     }
+
+    /**
+     * 初始化路由策略 (Initialize Routing Strategy).
+     * <p>
+     * 如果用户没有自定义 {@link RoutingStrategy} Bean，则根据配置文件创建默认策略。
+     * </p>
+     * <ul>
+     *     <li><b>MODULO (默认)</b> 计算速度极快，不适合扩容。 / Fast calculation, not suitable for expansion.</li>
+     *     <li><b>RENDEZVOUS:</b> 负载均衡性极佳，且在扩容/缩容时，只需迁移极少量数据。/ Excellent load balancing and minimal data migration on resizing.</li>
+     * </ul>
+     *
+     * <hr>
+     * <span style="color: gray; font-size: 0.9em;">
+     * Creates a default strategy based on config if the user hasn't defined a custom {@link RoutingStrategy} Bean.
+     * </span>
+     */
+    @Bean
+    @ConditionalOnMissingBean(RoutingStrategy.class)
+    public RoutingStrategy defaultRoutingStrategy(AtomicLedgerProperties props) {
+        if (props.getRouting() == RoutingType.MODULO) {
+            return new ModuloStrategy();
+        } else {
+            return new RendezvousHashStrategy();
+        }
+    }
+
 
     /**
      * <h3>核心引擎 Bean (Core Ledger Engine Bean)</h3>
@@ -91,6 +120,7 @@ public class AtomicLedgerAutoConfiguration {
      * @param processor 用户实现的业务逻辑 (User Business Logic)
      * @param syncer 用户实现的落库逻辑 (User Persistence Logic)
      * @param idempotencyStrategy 去重策略 (Deduplication Strategy)
+     * @param routingStrategy 路由策略 (Routing Strategy)
      * @param bootstrap 启动引导配置 (Bootstrap Config)
      * @param registryProvider Spring Boot 监控注册表 (Metrics Registry)
      * @return 组装好的引擎实例 (Configured Engine Instance)
@@ -103,6 +133,7 @@ public class AtomicLedgerAutoConfiguration {
             BusinessProcessor<S, C, E> processor,
             BatchWriter<E> syncer,
             IdempotencyStrategy idempotencyStrategy,
+            RoutingStrategy routingStrategy,
             LedgerBootstrap<S, C> bootstrap,
             ObjectProvider<MeterRegistry> registryProvider
     ) throws InitializationException {
@@ -120,10 +151,12 @@ public class AtomicLedgerAutoConfiguration {
                 .processor(processor)
                 .syncer(syncer)
                 .idempotency(idempotencyStrategy)
+                .routing(routingStrategy)
                 .initialStateSupplier(() -> bootstrap.getInitialState()) // 延迟加载 / Lazy load
                 .commandClass((bootstrap.getCommandClass()))
                 .meterRegistry(meterRegistry)
                 .metricsPrefix(props.getMetricsPrefix())
+                .cluster(props.getCluster().getTotalNodes(), props.getCluster().getNodeId())
                 .build();
     }
 }

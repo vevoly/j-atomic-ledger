@@ -12,7 +12,7 @@ package io.github.vevoly.ledger.api.exception;
  * </span>
  *
  * @author vevoly
- * @since 1.0.1
+ * @since 1.0.2
  */
 public class InitializationException extends JAtomicLedgerException {
     public InitializationException(String message) {

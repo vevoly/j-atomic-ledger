@@ -48,4 +48,10 @@ public interface IdempotencyStrategy extends Serializable {
      * <span style="color: gray; font-size: 0.9em;">Clear/Reset strategy state (Optional).</span>
      */
     default void clear() {}
+
+    /**
+     * 获取策略名 (Get Strategy Name).
+     * @return 路由策略名称 (Routing Strategy Name).
+     */
+    String getName();
 }

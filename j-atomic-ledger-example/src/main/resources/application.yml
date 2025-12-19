@@ -27,3 +27,7 @@ j-atomic-ledger:
   snapshot-time-interval: 20s  # 多少时间保存一次快照，支持 ms、s、m、h、d 单位
   batch-size: 1000             # 批量落库大小
   idempotency: BLOOM           # 使用布隆过滤器去重
+  routing: RENDEZVOUS          # 集群路由和节点内分片路由策略
+  cluster:                     # 集群配置
+    total-nodes: 1             # 集群节点总数
+    node-id: 0                 # 当前节点 ID

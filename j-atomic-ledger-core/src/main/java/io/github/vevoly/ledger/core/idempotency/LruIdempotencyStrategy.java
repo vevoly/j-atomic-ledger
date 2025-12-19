@@ -88,6 +88,11 @@ public class LruIdempotencyStrategy implements IdempotencyStrategy {
         cache.clear();
     }
 
+    @Override
+    public String getName() {
+        return IdempotencyType.LRU.name();
+    }
+
     /**
      * <h3>自定义 LRU Map 实现 (Custom LRU Map Implementation)</h3>
      * <p>

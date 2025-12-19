@@ -1,6 +1,8 @@
 package io.github.vevoly.ledger.starter;
 
+import io.github.vevoly.ledger.api.RoutingStrategy;
 import io.github.vevoly.ledger.core.idempotency.IdempotencyType;
+import io.github.vevoly.ledger.core.routing.RoutingType;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -99,5 +101,34 @@ public class AtomicLedgerProperties {
      * <span style="color: gray;">Metrics prefix. Default: "j-atomic-ledger.".</span>
      */
     private String metricsPrefix = "j-atomic-ledger.";
+
+    /**
+     * 路由策略类型 (Routing Strategy Type).
+     * <p>默认为取模策略 (Modulo)。</p>
+     * <span style="color: gray;">Routing strategy. Default: Modulo.</span>
+     */
+    private RoutingType routing = RoutingType.MODULO;
+
+    /**
+     * 集群配置 (Cluster Configuration).
+     */
+    private Cluster cluster = new Cluster();
+
+    @Data
+    public static class Cluster {
+        /**
+         * 集群总节点数 (Total nodes in the cluster).
+         * <p>单机部署时保持默认值 1。</p>
+         * <span style="color: gray;">Default is 1 for standalone mode.</span>
+         */
+        private int totalNodes = 1;
+
+        /**
+         * 当前节点 ID (Current Node ID).
+         * <p>范围: [0, totalNodes - 1]。每个节点必须唯一。</p>
+         * <span style="color: gray;">Range: [0, totalNodes - 1]. Must be unique for each node.</span>
+         */
+        private int nodeId = 0;
+    }
 
 }
