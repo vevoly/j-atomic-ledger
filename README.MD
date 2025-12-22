@@ -107,6 +107,57 @@ graph TD
     classDef highlight fill:#ffcdd2,stroke:#c62828,stroke-width:2px;
     Checker0:::highlight
 ```
+#### 1.4.3 扩容和数据迁移流程图 / Expansion & Data Migration Flowchart
+```mermaid
+graph TD
+    subgraph "Phase 1: 准备 (Preparation)"
+        A1("1. 停止整个集群<br/>(Stop Cluster)") --> A2("2. 备份所有节点数据<br/>(Backup All Node Data)")
+        A2 --> A3("3. 创建新的空目标目录<br/>(Create Empty Target Dirs)")
+    end
+
+    subgraph "Phase 2: 核心迁移 (Migration Tool)"
+        B1("4. 启动迁移工具<br/>(Start Migration Tool)")
+        B1 --> B2{"循环读取源分片 (p0, p1)"}
+        
+        B2 -- p0 --> B3_0["加载 p0 的快照<br/>(Load p0 Snapshot)"]
+        B2 -- p1 --> B3_1["加载 p1 的快照<br/>(Load p1 Snapshot)"]
+        
+        B3_0 --> B4_0{"遍历 p0 中的每个用户"}
+        B3_1 --> B4_1{"遍历 p1 中的每个用户"}
+        
+        B4_0 -- User A --> B5_A["<b>重新计算哈希 (Re-hash)</b><br/>Rendezvous(UserA, 4)"]
+        B4_1 -- User B --> B5_B["<b>重新计算哈希 (Re-hash)</b><br/>Rendezvous(UserB, 4)"]
+        
+        B5_A --> B6_A{"判断新位置"}
+        B5_B --> B6_B{"判断新位置"}
+        
+        B6_A -- "User A 还在 p0" --> B7_0["将 User A 写入<b>内存中</b>的新 p0 快照"]
+        B6_A -- "User A 移到 p2" --> B7_2["将 User A 写入<b>内存中</b>的新 p2 快照"]
+        B6_B -- "User B 还在 p1" --> B7_1["将 User B 写入<b>内存中</b>的新 p1 快照"]
+        B6_B -- "User B 移到 p3" --> B7_3["将 User B 写入<b>内存中</b>的新 p3 快照"]
+    end
+
+    subgraph "Phase 3: 生成新快照与日志 (Generate New Data)"
+        C1("8. 所有用户处理完毕")
+        B7_0 & B7_1 & B7_2 & B7_3 --> C1
+        
+        C1 --> C2{"循环写入新快照 (p0-p3)"}
+        C2 --> C3["保存 p0 的新快照文件"]
+        C2 --> C4["保存 p1, p2, p3 的新快照..."]
+        
+        C1 --> C5{"<b>复制并重命名 WAL 文件</b>"}
+        C5 --> C6["将旧 p0 的 WAL -> 新 p0 的 WAL"]
+        C5 --> C7["将旧 p1 的 WAL -> 新 p1 的 WAL"]
+        C5 --> C8["为 p2, p3 创建空的 WAL 目录"]
+    end
+    
+    subgraph "Phase 4: 部署与启动 (Deploy & Start)"
+        D1("9. 将新生成的数据目录分发到新服务器")
+        C3 & C4 & C6 & C7 & C8 --> D1
+        D1 --> D2("10. 修改网关路由配置 (N=4)")
+        D2 --> D3("11. 启动新集群")
+    end
+```
 ### 1.5 架构对比 / Comparison
 
 | 维度 / Dimension               | 现有架构 (Traditional)                   | **j-atomic-ledger**                                | **收益 / Benefit**                                            |

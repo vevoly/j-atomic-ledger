@@ -111,8 +111,8 @@ class LedgerPartition<S extends Serializable, C extends LedgerCommand, E extends
         this.snapshotTimeIntervalMs = builder.getSnapshotTimeIntervalMs();
         this.commandClass = builder.getCommandClass();
 
-        // 1. 初始化文件路径 格式 / initialize file path : baseDir/engineName/partitionName/wal
-        String fullPath = builder.getBaseDir() + File.separator + builder.getEngineName() + File.separator + partitionName;
+        // 1. 初始化文件路径 格式 / initialize file path : baseDir/engineName/clusterNode-?/partitionName/wal
+        String fullPath = builder.getBaseDir() + File.separator + builder.getEngineName() + File.separator + ("node-" + builder.getNodeId()) + File.separator + partitionName;
         // 2. 初始化 WAL 和快照管理器 / initialize WAL and snapshot manager
         this.walManager = new WalManager(fullPath);
         this.snapshotManager = new SnapshotManager<>(fullPath);

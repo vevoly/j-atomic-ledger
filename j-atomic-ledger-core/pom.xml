@@ -12,7 +12,7 @@
     <artifactId>j-atomic-ledger-core</artifactId>
     <name>j-atomic-ledger-core</name>
     <url>https://github.com/vevoly/j-atomic-ledger</url>
-    <description>Core models for j-atomic-ledger</description>
+    <description>Core module for j-atomic-ledger</description>
 
     <dependencies>
         <!-- 1. 引入 API 模块 -->

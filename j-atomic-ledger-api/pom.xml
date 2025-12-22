@@ -12,7 +12,7 @@
     <artifactId>j-atomic-ledger-api</artifactId>
     <name>j-atomic-ledger-api</name>
     <url>https://github.com/vevoly/j-atomic-ledger</url>
-    <description>API models for j-atomic-ledger</description>
+    <description>API module for j-atomic-ledger</description>
 
     <dependencies>
         <dependency>

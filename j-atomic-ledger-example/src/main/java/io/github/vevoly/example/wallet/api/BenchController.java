@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * <h3>性能压测接口 (Benchmark Controller)</h3>
+ * <h3>单机性能压测接口 (Benchmark Controller)</h3>
  *
  * <p>
  * 提供两种压测模式，用于验证引擎的 <b>吞吐量 (Throughput)</b> 和 <b>数据准确性 (Correctness)</b>。

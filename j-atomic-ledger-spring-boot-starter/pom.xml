@@ -29,8 +29,6 @@
         </dependency>
 
         <!-- 3. 配置元数据处理器 -->
-        <!-- 它的作用是扫描 @ConfigurationProperties 类，生成 json 元数据。-->
-        <!-- 用户在 application.yml 里输入 atomic.ledger 时，IDE 会自动弹出提示和补全 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>

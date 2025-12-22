@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'nacos-discovered-apps'
+    # 使用文件服务发现 / Use file service discovery
+    file_sd_configs:
+      - files:
+          # 指向共享目录里的 JSON 文件 / Point to the JSON file in the shared directory
+          - '/etc/prometheus/targets/nacos_targets.json'
+        # 即使文件暂时不存在也不报错 / Do not report an error even if the file temporarily does not exist
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [ ]
+        target_label: __metrics_path__
+        replacement: /actuator/prometheus # 修改 Prometheus endpoint / Modify Prometheus endpoint
