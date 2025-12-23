@@ -10,6 +10,9 @@
     </parent>
 
     <artifactId>example-common</artifactId>
+    <name>j-atomic-ledger-example-common</name>
+    <url>https://github.com/vevoly/j-atomic-ledger</url>
+    <description>Common of example module for j-atomic-ledger</description>
 
     <dependencies>
         <dependency>
