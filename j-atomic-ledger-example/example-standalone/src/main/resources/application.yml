@@ -1,0 +1,31 @@
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: "*" # 暴露所有端点，包括 metrics
+  metrics:
+    tags:
+      application: wallet-demo # 全局 Tag
+
+logging:
+  level:
+    root: INFO
+    # 屏蔽 Chronicle 的 INFO 级别噪音（比如磁盘检查、映射文件扩容日志）
+    net.openhft: WARN
+
+j-atomic-ledger:
+  base-dir: ./data/standalone  # 数据存储路径 (WAL and Snapshot)
+  engine-name: wallet-core     # 引擎名称
+  metrics-prefix: wallet       # metrics 前缀
+  partitions: 4                # 分片数量，
+  queue-size: 65536            # 异步落库队列
+  snapshot-interval: 50000     # 每5万条做一次快照
+  enable-time-snapshot: true   # 开启时间快照
+  snapshot-time-interval: 20s  # 多少时间保存一次快照，支持 ms、s、m、h、d 单位
+  batch-size: 1000             # 批量落库大小
+  idempotency: BLOOM           # 使用布隆过滤器去重，内置 BLOOM 和 LRU 两种策略
+  routing: RENDEZVOUS          # 集群路由和节点内分片路由策略，内置 RENDEZVOUS 和 MODULO 两种策略
