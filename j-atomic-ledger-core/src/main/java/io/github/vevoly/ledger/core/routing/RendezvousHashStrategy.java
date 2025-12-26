@@ -3,6 +3,7 @@ package io.github.vevoly.ledger.core.routing;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import io.github.vevoly.ledger.api.RoutingStrategy;
+import io.github.vevoly.ledger.api.constants.RoutingType;
 
 import java.nio.charset.StandardCharsets;
 

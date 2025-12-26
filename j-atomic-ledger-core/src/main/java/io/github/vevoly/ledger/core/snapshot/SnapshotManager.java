@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
+import io.github.vevoly.ledger.api.constants.JAtomicLedgerConstant;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
@@ -45,7 +46,7 @@ public class SnapshotManager<S extends Serializable> {
      * @param dataDir 指定的文件夹路径 (Specified directory path)
      */
     public SnapshotManager(String dataDir) {
-        this.snapshotDir = new File(dataDir, "snapshot");
+        this.snapshotDir = new File(dataDir, JAtomicLedgerConstant.SNAPSHOT_DIR);
         if (!this.snapshotDir.exists()) {
             this.snapshotDir.mkdirs();
         }

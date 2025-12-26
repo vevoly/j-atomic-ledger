@@ -2,6 +2,7 @@ package io.github.vevoly.ledger.core.tools;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.github.vevoly.ledger.api.constants.JAtomicLedgerConstant;
 import net.openhft.chronicle.bytes.BytesMarshallable;
 import net.openhft.chronicle.queue.ChronicleQueue;
 import net.openhft.chronicle.queue.ExcerptTailer;
@@ -68,7 +69,7 @@ public class WalViewer {
                             try {
                                 Class<?> clazz = Class.forName(className);
                                 BytesMarshallable instance = (BytesMarshallable) clazz.getDeclaredConstructor().newInstance();
-                                Object cmd = r.read("data").object(clazz);
+                                Object cmd = r.read(JAtomicLedgerConstant.WAL_KEY_FIELD_NAME).object(clazz);
                                 if (cmd != null) {
                                     System.out.println(gson.toJson(cmd));
                                 } else {

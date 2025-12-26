@@ -1,11 +1,10 @@
 package io.github.vevoly.ledger.core.wal;
 
-import net.openhft.chronicle.bytes.BytesMarshallable;
+import io.github.vevoly.ledger.api.constants.JAtomicLedgerConstant;
 import net.openhft.chronicle.queue.ExcerptAppender;
 import net.openhft.chronicle.queue.ExcerptTailer;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueue;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueueBuilder;
-import net.openhft.chronicle.wire.WriteMarshallable;
 
 import java.io.Closeable;
 import java.io.File;
@@ -43,7 +42,7 @@ public class WalManager implements Closeable {
      * @param dataDir 数据存储根目录 (Parent directory for data storage). e.g. /data/ledger/core-p0
      */
     public WalManager(String dataDir) {
-        File walDir = new File(dataDir, "wal");
+        File walDir = new File(dataDir, JAtomicLedgerConstant.WAL_DIR);
         this.queue = SingleChronicleQueueBuilder.binary(walDir).build();
     }
 
@@ -68,7 +67,7 @@ public class WalManager implements Closeable {
         // 1. 从 ThreadLocal 获取本线程专属的 Appender / Get the thread-local Appender for this thread
         ExcerptAppender appender = threadLocalAppender.get();
         // 2. 写入 / Write
-        appender.writeDocument(w -> w.write("data").object(command.getClass(), command));
+        appender.writeDocument(w -> w.write(JAtomicLedgerConstant.WAL_KEY_FIELD_NAME).object(command.getClass(), command));
         // 3. 返回索引 / Return index
         return appender.lastIndexAppended();
     }

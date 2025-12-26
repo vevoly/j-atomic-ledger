@@ -3,7 +3,9 @@ package io.github.vevoly.ledger.core.admin;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.github.vevoly.ledger.api.LedgerCommand;
+import io.github.vevoly.ledger.api.constants.JAtomicLedgerConstant;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.openhft.chronicle.queue.ChronicleQueue;
 import net.openhft.chronicle.queue.ExcerptTailer;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueueBuilder;
@@ -25,6 +27,7 @@ import java.util.List;
  * @author vevoly
  * @since 1.2.1
  */
+@Slf4j
 @NoArgsConstructor
 public class JAtomicLedgerAdminUtils {
 
@@ -44,32 +47,38 @@ public class JAtomicLedgerAdminUtils {
         if (!dir.exists() || !dir.isDirectory()) {
             throw new FileNotFoundException("WAL directory not found: " + walPath);
         }
-
         List<String> results = new ArrayList<>();
-
         try (ChronicleQueue queue = SingleChronicleQueueBuilder.binary(dir).readOnly(true).build()) {
             ExcerptTailer tailer = queue.createTailer();
             tailer.toStart();
-
+            log.info("正在读取目录 / Loading dir: " + dir.getAbsolutePath());
+            log.info("========================================");
             while (true) {
                 try (DocumentContext dc = tailer.readingDocument()) {
-                    if (!dc.isPresent()) break;
-
-                    String record;
-                    try {
-                        C cmd = dc.wire().read("data").object(commandClass);
-                        if (cmd != null) {
-                            record = gson.toJson(cmd);
-                        } else {
-                            record = "{\"error\": \"Parsed command is null at index " + dc.index() + "\"}";
-                        }
-                    } catch (Exception e) {
-                        // 降级为文本模式
-                        record = "{\"error\": \"Deserialization failed at index " + dc.index() + "\", \"rawData\": \"" + dc.wire().toString().replace("\"", "\\\"") + "\"}";
+                    if (!dc.isPresent()) {
+                        break;
                     }
-                    results.add(record);
+
+                    String recordJson;
+                    try {
+                        // 尝试反序列化
+                        Object cmd = dc.wire().read(JAtomicLedgerConstant.WAL_KEY_FIELD_NAME).object(commandClass);
+                        recordJson = gson.toJson(cmd);
+
+                    } catch (Exception e) {
+                        // 如果反序列化失败，降级为文本模式
+                        String rawData = dc.wire().toString().replace("\"", "\\\"");
+                        recordJson = String.format("{\"error\": \"Deserialization failed at index %d\", \"rawData\": \"%s\"}", dc.index(), rawData);
+                        log.error("反序列化失败，Index: {}", dc.index(), e);
+                    }
+                    results.add(recordJson);
                 }
             }
+            log.info("========================================");
+            log.info("读取完成，共 " + results.size() + " 条记录。");
+        } catch (Exception e) {
+            log.error("读取 WAL 失败 / Load WAL failed", e);
+            throw e;
         }
         return results;
     }

@@ -9,6 +9,7 @@ import io.github.vevoly.ledger.api.LedgerCommand;
 import io.github.vevoly.ledger.api.exception.DuplicateCommandException;
 import io.github.vevoly.ledger.api.exception.InitializationException;
 import io.github.vevoly.ledger.api.exception.RecoveryException;
+import io.github.vevoly.ledger.api.constants.JAtomicLedgerConstant;
 import io.github.vevoly.ledger.core.metrics.LedgerMetricManager;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
@@ -111,8 +112,9 @@ class JAtomicLedgerPartition<S extends Serializable, C extends LedgerCommand, E 
         this.snapshotTimeIntervalMs = builder.getSnapshotTimeIntervalMs();
         this.commandClass = builder.getCommandClass();
 
-        // 1. 初始化文件路径 格式 / initialize file path : baseDir/engineName/clusterNode-?/partitionName/wal
-        String fullPath = builder.getBaseDir() + File.separator + builder.getEngineName() + File.separator + ("node-" + builder.getNodeId()) + File.separator + partitionName;
+        // 1. 初始化文件路径 格式 / initialize file path : baseDir/engineName/node-?/partitionName/wal
+        String fullPath = builder.getBaseDir() + File.separator + builder.getEngineName() + File.separator +
+                (JAtomicLedgerConstant.CLUSTER_NODE_MARK + builder.getNodeId()) + File.separator + partitionName;
         // 2. 初始化 WAL 和快照管理器 / initialize WAL and snapshot manager
         this.walManager = new WalManager(fullPath);
         this.snapshotManager = new SnapshotManager<>(fullPath);
@@ -231,7 +233,7 @@ class JAtomicLedgerPartition<S extends Serializable, C extends LedgerCommand, E 
                 boolean found = tailer.readDocument(r -> {
                     documentRead.set(true);
                     // 这里读取 "data" 字段，反序列化为对象 / read "data" field and deserialize to object
-                    C cmd = r.read("data").object(commandClass);
+                    C cmd = r.read(JAtomicLedgerConstant.WAL_KEY_FIELD_NAME).object(commandClass);
                     if (cmd != null) {
                         processCommand(cmd, true);
                         readSuccess.set(true);

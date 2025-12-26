@@ -1,4 +1,4 @@
-package io.github.vevoly.ledger.core.idempotency;
+package io.github.vevoly.ledger.api.constants;
 
 /**
  * <h3>幂等策略类型枚举 (Idempotency Strategy Type)</h3>

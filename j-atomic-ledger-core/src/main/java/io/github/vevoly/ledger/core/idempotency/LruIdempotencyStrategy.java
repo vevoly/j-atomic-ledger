@@ -1,6 +1,7 @@
 package io.github.vevoly.ledger.core.idempotency;
 
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
+import io.github.vevoly.ledger.api.constants.IdempotencyType;
 import lombok.NoArgsConstructor;
 
 import java.io.Serial;

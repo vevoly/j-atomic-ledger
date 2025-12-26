@@ -1,6 +1,7 @@
 package io.github.vevoly.ledger.core.routing;
 
 import io.github.vevoly.ledger.api.RoutingStrategy;
+import io.github.vevoly.ledger.api.constants.RoutingType;
 
 /**
  * <h3>简单哈希取模路由策略 (Simple Hash Modulo Strategy)</h3>

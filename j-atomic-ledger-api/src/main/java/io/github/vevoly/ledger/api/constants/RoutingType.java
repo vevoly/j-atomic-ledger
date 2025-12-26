@@ -1,4 +1,4 @@
-package io.github.vevoly.ledger.core.routing;
+package io.github.vevoly.ledger.api.constants;
 
 /**
  * <h3>路由类型枚举 (Routing Strategy Type)</h3>

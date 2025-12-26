@@ -3,6 +3,7 @@ package io.github.vevoly.ledger.core.idempotency;
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnels;
 import io.github.vevoly.ledger.api.IdempotencyStrategy;
+import io.github.vevoly.ledger.api.constants.IdempotencyType;
 
 import java.io.Serial;
 import java.nio.charset.StandardCharsets;

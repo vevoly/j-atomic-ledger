@@ -9,14 +9,11 @@ spring:
       discovery:
         server-addr: 127.0.0.1:8848
         ip: host.docker.internal # 上报给 Nacos 的 IP
-        metadata:
-          management.server.port: ${management.server.port:${server.port}} # 上报管理端口
-          node-id: ${j-atomic-ledger.cluster.node-id} # 上报节点 id
 
 management:
   endpoints:
     web:
-      base-path: /actuator
+      base-path: /actuator1
       exposure:
         include: "*" # 暴露所有端点，包括 metrics
   metrics:

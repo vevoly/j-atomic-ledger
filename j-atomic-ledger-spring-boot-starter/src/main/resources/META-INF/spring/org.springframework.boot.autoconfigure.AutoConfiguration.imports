@@ -1,1 +1,3 @@
 io.github.vevoly.ledger.starter.JAtomicLedgerAutoConfiguration
+io.github.vevoly.ledger.starter.JAtomicLedgerEndpointAutoConfiguration
+io.github.vevoly.ledger.starter.JAtomicLedgerMetadataAutoConfiguration

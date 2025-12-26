@@ -3,12 +3,13 @@ package io.github.vevoly.ledger.starter;
 import io.github.vevoly.ledger.api.*;
 import io.github.vevoly.ledger.api.exception.InitializationException;
 import io.github.vevoly.ledger.core.JAtomicLedgerEngine;
+import io.github.vevoly.ledger.api.constants.JAtomicLedgerConstant;
 import io.github.vevoly.ledger.core.idempotency.BloomFilterIdempotencyStrategy;
-import io.github.vevoly.ledger.core.idempotency.IdempotencyType;
+import io.github.vevoly.ledger.api.constants.IdempotencyType;
 import io.github.vevoly.ledger.core.idempotency.LruIdempotencyStrategy;
 import io.github.vevoly.ledger.core.routing.ModuloStrategy;
 import io.github.vevoly.ledger.core.routing.RendezvousHashStrategy;
-import io.github.vevoly.ledger.core.routing.RoutingType;
+import io.github.vevoly.ledger.api.constants.RoutingType;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -61,7 +62,7 @@ public class JAtomicLedgerAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(IdempotencyStrategy.class)
     public IdempotencyStrategy defaultIdempotencyStrategy(JAtomicLedgerProperties props) {
-        if (props.getIdempotency() == IdempotencyType.LRU) {
+        if (props.getIdempotency().equalsIgnoreCase(IdempotencyType.LRU.name())) {
             return new LruIdempotencyStrategy();
         } else {
             return new BloomFilterIdempotencyStrategy();
@@ -86,7 +87,7 @@ public class JAtomicLedgerAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(RoutingStrategy.class)
     public RoutingStrategy defaultRoutingStrategy(JAtomicLedgerProperties props) {
-        if (props.getRouting() == RoutingType.MODULO) {
+        if (props.getRouting().equalsIgnoreCase(RoutingType.MODULO.name())) {
             return new ModuloStrategy();
         } else {
             return new RendezvousHashStrategy();
@@ -127,7 +128,7 @@ public class JAtomicLedgerAutoConfiguration {
      */
     @Bean(initMethod = "start", destroyMethod = "shutdown")
     @ConditionalOnBean({BusinessProcessor.class, BatchWriter.class, LedgerBootstrap.class})
-    @ConditionalOnProperty(prefix = "j-atomic-ledger", name = "base-dir")
+    @ConditionalOnProperty(prefix = JAtomicLedgerConstant.J_ATOMIC_LEDGER_ID, name = "base-dir")
     public <S extends Serializable, C extends LedgerCommand, E extends Serializable> JAtomicLedgerEngine<S, C, E> ledgerEngine(
             JAtomicLedgerProperties props,
             BusinessProcessor<S, C, E> processor,
