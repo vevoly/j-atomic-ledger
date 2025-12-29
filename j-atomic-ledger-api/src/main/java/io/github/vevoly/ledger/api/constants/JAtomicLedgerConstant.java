@@ -30,26 +30,24 @@ public class JAtomicLedgerConstant {
     public static final String DEFAULT_ACTUATOR_BASE_PATH = "/actuator";
 
 
+    // 固定名称 / Fixed names
     public static final String BUSINESS_ID = "businessId";
+    public static final String TRANSACTION_ID = "txId";
+    public static final String CURSOR = "cursor";
+    public static final String PAGE_SIZE = "pageSize";
     public static final String CLUSTER_NODE_MARK = "node-";
-
     public static final String WAL_DIR = "wal";
-
     public static final String SNAPSHOT_DIR = "snapshot";
-
     public static final String WAL_KEY_FIELD_NAME = "data";
 
+
+
+    // 上报元数据 / Report metadata
     public static final String META_ACTUATOR_BASE_PATH = "management.endpoints.web.base-path";
-
     public static final String META_PARTITIONS = J_ATOMIC_LEDGER_ID + ".partitions";
-
     public static final String META_ROUTING = J_ATOMIC_LEDGER_ID + ".routing";
-
     public static final String META_TOTAL_NODES = J_ATOMIC_LEDGER_ID + ".total-nodes";
-
     public static final String META_NODE_ID = J_ATOMIC_LEDGER_ID + ".node-id";
-
     public static final String META_ADMIN_ENABLED = J_ATOMIC_LEDGER_ID + ".admin.enabled";
-
 
 }

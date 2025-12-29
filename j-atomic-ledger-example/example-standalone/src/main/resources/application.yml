@@ -29,3 +29,5 @@ j-atomic-ledger:
   batch-size: 1000             # 批量落库大小
   idempotency: BLOOM           # 使用布隆过滤器去重，内置 BLOOM 和 LRU 两种策略
   routing: RENDEZVOUS          # 集群路由和节点内分片路由策略，内置 RENDEZVOUS 和 MODULO 两种策略
+  admin:
+    enable: true               # 开启管理端点
